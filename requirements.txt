@@ -1,0 +1,24 @@
+# Data processing
+pandas
+numpy
+openpyxl
+xlrd
+
+# Database
+SQLAlchemy
+psycopg2-binary
+
+# Configuration
+python-dotenv
+
+# Data validation
+pandera
+
+# Notebook and development
+jupyterlab
+ipykernel
+
+# Visualization and analysis
+matplotlib
+seaborn
+plotly
