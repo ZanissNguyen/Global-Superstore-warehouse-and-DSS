@@ -5,7 +5,7 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
-from pipeline.config import LOG_DIR, ensure_directories
+from src.pipeline.config import LOG_DIR, ensure_directories
 
 
 def setup_logger(
