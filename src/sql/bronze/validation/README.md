@@ -8,10 +8,8 @@ Define SQL queries for checking the structural integrity and ingestion completen
 
 | File | Responsibility |
 |---|---|
-| `check_ingestion.sql` | Check ingestion metadata, including batch status, imported filename, and recorded row count. |
 | `check_row_count.sql` | Compare the number of records stored in the raw table against the number recorded for the corresponding ingestion batch. |
 | `check_duplicates.sql` | Identify duplicate source records within an ingestion batch. |
-| `check_schema.sql` | Inspect the raw table structure and verify that required source columns are available. |
 
 ## Design Notes
 
