@@ -40,25 +40,22 @@ docker compose up -d
 python -m src.pipeline.cli --init-db
 
 # Bước 5: Chạy quy trình nạp dữ liệu ETL (51k records)
-python -m src.etl.bronze.data_to_bronze --input "data/Global Superstore.xls"
-python -m src.etl.silver.transform
-python -m src.etl.gold.load_dimensions
-python -m src.etl.gold.load_facts
+python -m src.pipeline.flows.bronze_to_gold --input "dataset/superstore_dataset2011-2015.csv"
 
 # Bước 6: Chạy Pipeline DSS (Huấn luyện mô hình và lưu kết quả vào PostgreSQL)
 python -m src.dss.predictive.run --target sales --horizon 6
-python -m src.dss.association.run --algorithm apriori
+python -m src.dss.association.run --level product --min-count 3
 
 # Bước 7: Mở ứng dụng Web DSS tương tác
-streamlit run src/app/main.py
+python -m streamlit run src/app/main.py
 ```
 
 ---
 
 ## 3. THÔNG TIN BẢNG DỮ LIỆU & NGUỒN DỮ LIỆU CHUẨN
 
-- File nguồn 51,290 bản ghi: `Global Superstore.xls` (Bao gồm 3 sheet: `Orders`, `Returns`, `People`) hoặc `superstore_dataset2011-2015.csv`.
-- Thư mục dữ liệu gốc lưu tại: `E:\bku\261\DW\BTL\dt\` hoặc đặt vào `data/`.
+- File nguồn 51,290 bản ghi chuẩn: `dataset/superstore_dataset2011-2015.csv` (đặt sẵn trong thư mục `dataset/` của dự án).
+- File nguồn Excel gốc: `Global Superstore.xls` (Bao gồm 3 sheet: `Orders`, `Returns`, `People`).
 - Cấu hình cổng kết nối mặc định:
   - PostgreSQL: `5432` (hoặc `5433` nếu cổng 5432 bị chiếm dụng).
   - pgAdmin 4: `5050` (`http://localhost:5050`).

@@ -50,11 +50,12 @@ def truncate_tables(engine, dry_run: bool = False, rollback: bool = False):
     truncate_table(engine, "bronze", "market", dry_run=dry_run, rollback=rollback)
 
 def main(
-    input_path: Path | None = None,
+    input_path: Path | str | None = None,
     dry_run: bool = False,
     rollback: bool = False
 ):
     if input_path is not None:
+        input_path = Path(input_path)
         print(f"Input: {input_path}")
     
     # ETL logic
@@ -145,6 +146,3 @@ if __name__ == "__main__":
         dry_run=args.dry_run,
         rollback=args.rollback
     )
-
-
-

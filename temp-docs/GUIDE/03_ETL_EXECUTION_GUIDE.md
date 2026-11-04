@@ -13,9 +13,9 @@ $$\mathbf{Bronze\ (Raw)} \xrightarrow{\text{Transform \& Clean}} \mathbf{Silver\
 
 Để chạy tự động toàn bộ luồng từ file nguồn đến các bảng Fact/Dimension tầng Gold:
 ```powershell
-python -m src.pipeline.flows.bronze_to_gold --input "E:\bku\261\DW\BTL\dt\superstore_dataset2011-2015.csv\superstore_dataset2011-2015.csv"
+python -m src.pipeline.flows.bronze_to_gold --input "dataset/superstore_dataset2011-2015.csv"
 ```
-*(Hoặc trỏ tới file Excel: `"E:\bku\261\DW\BTL\dt\Global Superstore.xls\Global Superstore.xls"`)*
+*(File dataset chuẩn đã được tích hợp sẵn ngay trong thư mục `dataset/` của dự án để đảm bảo tính đồng bộ và di động khi clone repo).*
 
 ---
 
@@ -23,7 +23,7 @@ python -m src.pipeline.flows.bronze_to_gold --input "E:\bku\261\DW\BTL\dt\supers
 
 ### Bước 1: Nạp dữ liệu thô vào tầng Bronze
 ```powershell
-python -m src.etl.bronze.data_to_bronze --input "E:\bku\261\DW\BTL\dt\superstore_dataset2011-2015.csv\superstore_dataset2011-2015.csv"
+python -m src.etl.bronze.data_to_bronze --input "dataset/superstore_dataset2011-2015.csv"
 ```
 - **Kiểm tra kết quả Bronze:**
   ```sql
