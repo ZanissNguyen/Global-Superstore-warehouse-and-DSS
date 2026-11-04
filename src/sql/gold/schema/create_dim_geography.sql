@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS gold.dim_geography (
     region VARCHAR(50) NOT NULL,
     regional_manager VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_dim_geography UNIQUE (country, state, city, postal_code)
+    CONSTRAINT uq_dim_geography UNIQUE (country, state, city, postal_code, market, region)
 );
 
 CREATE INDEX IF NOT EXISTS idx_dim_geo_market_region ON gold.dim_geography(market, region);

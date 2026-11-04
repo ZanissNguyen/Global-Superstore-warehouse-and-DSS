@@ -12,7 +12,7 @@ INSERT INTO gold.dim_geography (
     region,
     regional_manager
 )
-SELECT DISTINCT
+SELECT DISTINCT ON (country, state, city, postal_code, market, region)
     country,
     state,
     city,
@@ -21,8 +21,7 @@ SELECT DISTINCT
     region,
     regional_manager
 FROM silver.orders
-ON CONFLICT (country, state, city, postal_code) DO UPDATE
+ORDER BY country, state, city, postal_code, market, region, regional_manager NULLS LAST
+ON CONFLICT (country, state, city, postal_code, market, region) DO UPDATE
 SET 
-    market = EXCLUDED.market,
-    region = EXCLUDED.region,
     regional_manager = COALESCE(EXCLUDED.regional_manager, gold.dim_geography.regional_manager);

@@ -12,12 +12,12 @@ from itertools import combinations
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql, execute_sql
 
-def extract_baskets(engine):
-    sql = """
-    SELECT 
+def extract_baskets(engine, level="product"):
+    column_name = "p.product_name" if level == "product" else "p.sub_category"
+    sql = f"""
+    SELECT DISTINCT
         f.order_id,
-        p.product_id,
-        p.product_name
+        {column_name} AS item_name
     FROM gold.fact_sales f
     JOIN gold.dim_product p ON f.product_key = p.product_key
     ORDER BY f.order_id;
@@ -34,24 +34,24 @@ def extract_baskets(engine):
     for i in range(1, 301):
         order_id = f"ORD-{i:04d}"
         if i % 3 == 0:
-            sample_baskets.append({"order_id": order_id, "product_id": "P001", "product_name": "Fellowes Bankers Box"})
-            sample_baskets.append({"order_id": order_id, "product_id": "P002", "product_name": "Tenex File Folders"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Fellowes Bankers Box"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Tenex File Folders"})
         elif i % 5 == 0:
-            sample_baskets.append({"order_id": order_id, "product_id": "P003", "product_name": "Hewlett-Packard Copy Paper"})
-            sample_baskets.append({"order_id": order_id, "product_id": "P004", "product_name": "Wilson Jones Binders"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Hewlett-Packard Copy Paper"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Wilson Jones Binders"})
         elif i % 7 == 0:
-            sample_baskets.append({"order_id": order_id, "product_id": "P005", "product_name": "Apple Smart Phone"})
-            sample_baskets.append({"order_id": order_id, "product_id": "P006", "product_name": "Belkin Screen Protector"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Apple Smart Phone"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Belkin Screen Protector"})
         else:
-            sample_baskets.append({"order_id": order_id, "product_id": "P007", "product_name": "Sanford Highlighters"})
+            sample_baskets.append({"order_id": order_id, "item_name": "Sanford Highlighters"})
     return pd.DataFrame(sample_baskets)
 
-def mine_association_rules(df, min_support=0.005, min_confidence=0.25, min_lift=1.2):
-    # Group products by order_id
-    baskets = df.groupby("order_id")["product_name"].apply(set).tolist()
+def mine_association_rules(df, min_support=0.0001, min_confidence=0.10, min_lift=1.2, min_count=2):
+    # Group items by order_id
+    baskets = df.groupby("order_id")["item_name"].apply(set).tolist()
     total_tx = len(baskets)
     if total_tx == 0:
-        return []
+        return 0, []
 
     item_counts = defaultdict(int)
     pair_counts = defaultdict(int)
@@ -64,6 +64,8 @@ def mine_association_rules(df, min_support=0.005, min_confidence=0.25, min_lift=
 
     rules = []
     for (p1, p2), count in pair_counts.items():
+        if count < min_count:
+            continue
         support = count / total_tx
         if support < min_support:
             continue
@@ -139,23 +141,26 @@ def persist_rules(engine, total_tx, rules, min_support, min_confidence, min_lift
 def main():
     parser = argparse.ArgumentParser(description="Market Basket Analysis")
     parser.add_argument("--algorithm", type=str, default="apriori")
-    parser.add_argument("--min-support", type=float, default=0.005)
-    parser.add_argument("--min-confidence", type=float, default=0.25)
+    parser.add_argument("--level", type=str, default="product", choices=["product", "sub_category"])
+    parser.add_argument("--min-support", type=float, default=0.0001)
+    parser.add_argument("--min-confidence", type=float, default=0.10)
     parser.add_argument("--min-lift", type=float, default=1.2)
+    parser.add_argument("--min-count", type=int, default=2)
     args = parser.parse_args()
 
     engine = create_db_engine()
     print("=" * 60)
     print("RUNNING MARKET BASKET & ASSOCIATION RULE MINING")
-    print(f"Parameters: Min Support={args.min_support*100}% | Min Confidence={args.min_confidence*100}% | Min Lift={args.min_lift}")
+    print(f"Parameters: Level={args.level.upper()} | Min Count={args.min_count} | Min Confidence={args.min_confidence*100}% | Min Lift={args.min_lift}")
     print("=" * 60)
 
-    df = extract_baskets(engine)
+    df = extract_baskets(engine, level=args.level)
     total_tx, rules = mine_association_rules(
         df,
         min_support=args.min_support,
         min_confidence=args.min_confidence,
-        min_lift=args.min_lift
+        min_lift=args.min_lift,
+        min_count=args.min_count
     )
 
     print(f"\nAnalyzed {total_tx} transactions. Discovered {len(rules)} valid rules.")

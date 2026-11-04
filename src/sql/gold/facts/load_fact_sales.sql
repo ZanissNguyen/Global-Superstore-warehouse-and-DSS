@@ -46,5 +46,7 @@ JOIN gold.dim_geography g ON s.country = g.country
     AND s.state = g.state 
     AND s.city = g.city 
     AND s.postal_code = g.postal_code
+    AND s.market = g.market
+    AND s.region = g.region
 JOIN gold.dim_ship_mode sm ON s.ship_mode = sm.ship_mode_name
 ON CONFLICT (row_id) DO NOTHING;

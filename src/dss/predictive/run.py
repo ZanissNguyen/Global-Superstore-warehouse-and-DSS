@@ -48,7 +48,7 @@ def extract_sales_series(engine):
     })
 
 def fit_forecast(df, target_col="total_sales", horizon=6):
-    series = df[target_col].values
+    series = df[target_col].astype(float).values
     n = len(series)
     train_size = int(n * 0.75)
     train, test = series[:train_size], series[train_size:]
@@ -75,7 +75,8 @@ def fit_forecast(df, target_col="total_sales", horizon=6):
     lower_bounds = []
     upper_bounds = []
 
-    last_date = pd.to_datetime(df["month_date"].iloc[-1])
+    month_dates = pd.to_datetime(df["month_date"])
+    last_date = month_dates.iloc[-1]
     future_dates = pd.date_range(last_date + pd.DateOffset(months=1), periods=horizon, freq="MS")
 
     std_err = float(np.std(test - test_pred))
@@ -86,10 +87,10 @@ def fit_forecast(df, target_col="total_sales", horizon=6):
         upper_bounds.append(float(pred + 1.96 * std_err))
 
     return {
-        "train_start": str(df["month_date"].iloc[0].date()),
-        "train_end": str(df["month_date"].iloc[train_size - 1].date()),
-        "test_start": str(df["month_date"].iloc[train_size].date()),
-        "test_end": str(df["month_date"].iloc[-1].date()),
+        "train_start": str(month_dates.iloc[0].date()),
+        "train_end": str(month_dates.iloc[train_size - 1].date()),
+        "test_start": str(month_dates.iloc[train_size].date()),
+        "test_end": str(month_dates.iloc[-1].date()),
         "mae": mae,
         "rmse": rmse,
         "mape": mape,
