@@ -1,0 +1,116 @@
+// =============================================================================
+// DAX MEASURES CATALOG - GLOBAL SUPERSTORE DATA WAREHOUSE & DSS
+// Course: CO4031 - HK261 | Ho Chi Minh City University of Technology (HCMUT)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// FOLDER: 1. Core Financial & Sales Measures
+// -----------------------------------------------------------------------------
+
+Total Sales = 
+SUM('gold fact_sales'[sales])
+
+Total Profit = 
+SUM('gold fact_sales'[profit])
+
+Total Quantity = 
+SUM('gold fact_sales'[quantity])
+
+Total Orders = 
+DISTINCTCOUNT('gold fact_sales'[order_id])
+
+Total Unique Customers = 
+DISTINCTCOUNT('gold fact_sales'[customer_key])
+
+Average Order Value (AOV) = 
+DIVIDE([Total Sales], [Total Orders], 0)
+
+Profit Margin % = 
+DIVIDE([Total Profit], [Total Sales], 0)
+
+Average Discount % = 
+AVERAGE('gold fact_sales'[discount]) * 100
+
+Total Shipping Cost = 
+SUM('gold fact_sales'[shipping_cost])
+
+Shipping to Sales Ratio = 
+DIVIDE([Total Shipping Cost], [Total Sales], 0)
+
+// -----------------------------------------------------------------------------
+// FOLDER: 2. Time Intelligence & Growth
+// -----------------------------------------------------------------------------
+
+Sales YTD = 
+TOTALYTD([Total Sales], 'gold dim_date'[full_date])
+
+Sales SPLY = 
+CALCULATE([Total Sales], SAMEPERIODLASTYEAR('gold dim_date'[full_date]))
+
+Sales YoY Growth % = 
+VAR PrevYearSales = [Sales SPLY]
+RETURN
+DIVIDE([Total Sales] - PrevYearSales, PrevYearSales, 0)
+
+Profit SPLY = 
+CALCULATE([Total Profit], SAMEPERIODLASTYEAR('gold dim_date'[full_date]))
+
+Profit YoY Growth % = 
+VAR PrevYearProfit = [Profit SPLY]
+RETURN
+DIVIDE([Total Profit] - PrevYearProfit, ABS(PrevYearProfit), 0)
+
+Sales Prior Month = 
+CALCULATE([Total Sales], PREVIOUSMONTH('gold dim_date'[full_date]))
+
+Sales MoM Growth % = 
+VAR PrevMonth = [Sales Prior Month]
+RETURN
+DIVIDE([Total Sales] - PrevMonth, PrevMonth, 0)
+
+// -----------------------------------------------------------------------------
+// FOLDER: 3. Risk Hotspots & Business Indicators
+// -----------------------------------------------------------------------------
+
+Negative Profit Orders Count = 
+CALCULATE(
+    [Total Orders],
+    'gold fact_sales'[profit] < 0
+)
+
+Loss Making Sales = 
+CALCULATE(
+    [Total Sales],
+    'gold fact_sales'[profit] < 0
+)
+
+Margin Health Indicator = 
+SWITCH(
+    TRUE(),
+    [Profit Margin %] >= 0.15, "High Profit (>= 15%)",
+    [Profit Margin %] >= 0.05, "Moderate Profit (5-15%)",
+    [Profit Margin %] >= 0.00, "Low Profit (0-5%)",
+    "Loss-Making (< 0%)"
+)
+
+// -----------------------------------------------------------------------------
+// FOLDER: 4. Product Portfolio & Pareto 80/20
+// -----------------------------------------------------------------------------
+
+Cumulative Product Sales = 
+VAR CurrentSales = [Total Sales]
+RETURN
+CALCULATE(
+    [Total Sales],
+    FILTER(
+        ALLSELECTED('gold dim_product'),
+        [Total Sales] >= CurrentSales
+    )
+)
+
+Pareto % = 
+DIVIDE(
+    [Cumulative Product Sales],
+    CALCULATE([Total Sales], ALLSELECTED('gold dim_product')),
+    1
+)
