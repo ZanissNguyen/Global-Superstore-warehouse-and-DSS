@@ -75,15 +75,19 @@ def load_db_categories():
     })
 
 @st.cache_data(ttl=60)
-def load_db_historical_monthly_sales():
+def load_db_monthly_trends():
     try:
         from src.pipeline.database import create_db_engine
         from src.pipeline.executor import query_sql
         engine = create_db_engine()
         sql = """
         SELECT 
+            d.year_month,
             MIN(d.full_date) AS month_date,
-            ROUND(SUM(f.sales), 2) AS monthly_sales
+            COUNT(DISTINCT f.order_id) AS total_orders,
+            ROUND(SUM(f.sales), 2) AS monthly_sales,
+            ROUND(SUM(f.profit), 2) AS monthly_profit,
+            ROUND(SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100, 2) AS margin_pct
         FROM gold.fact_sales f
         JOIN gold.dim_date d ON f.order_date_key = d.date_key
         GROUP BY d.year_month
@@ -94,6 +98,13 @@ def load_db_historical_monthly_sales():
             return df
     except Exception:
         pass
+    return None
+
+@st.cache_data(ttl=60)
+def load_db_historical_monthly_sales():
+    df = load_db_monthly_trends()
+    if df is not None and not df.empty:
+        return df[["month_date", "monthly_sales"]]
     return None
 
 @st.cache_data(ttl=60)
@@ -140,15 +151,18 @@ def load_db_rules():
         from src.pipeline.executor import query_sql
         engine = create_db_engine()
         sql = """
-        SELECT DISTINCT
+        SELECT 
             antecedent_names AS "Sản phẩm mua trước (Antecedent)",
             consequent_names AS "Sản phẩm gợi ý mua kèm (Consequent)",
             ROUND(support * 100, 3) AS "Support (%)",
             ROUND(confidence * 100, 2) AS "Confidence (%)",
             ROUND(lift, 2) AS "Lift"
-        FROM dss.association_rule
-        ORDER BY lift DESC
-        LIMIT 25;
+        FROM (
+            SELECT DISTINCT antecedent_names, consequent_names, support, confidence, lift
+            FROM dss.association_rule
+        ) sub
+        ORDER BY "Lift" DESC
+        LIMIT 50;
         """
         df = query_sql(engine, sql)
         if not df.empty and len(df) > 0:
@@ -181,7 +195,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # =============================================================================
-# TAB 1: Executive KPIs & Risk Hotspots (Live Gold DW)
+# TAB 1: Executive KPIs & Monthly Trends (Live Gold DW)
 # =============================================================================
 with tab1:
     st.subheader("1. Tổng quan Chỉ số Hiệu quả Kinh doanh (Executive Scorecard - Dữ liệu thực từ Gold Warehouse)")
@@ -200,6 +214,46 @@ with tab1:
     with col5:
         st.metric("Tỷ lệ Hoàn trả", "2.29%", "-0.15% YoY")
         
+    st.divider()
+
+    # Biểu đồ Doanh thu và Lợi nhuận theo 48 Tháng (Dual-Axis Chart)
+    st.subheader("📅 Biểu đồ Doanh thu và Lợi nhuận theo Tháng (Chuỗi 48 Tháng Lịch sử 2011 - 2014)")
+    st.caption("Truy vấn trực tiếp từ bảng facts (`gold.fact_sales`) và calendar dimension (`gold.dim_date`). Mỗi tháng tổng hợp từ 180 đến hơn 1,000 đơn hàng.")
+    
+    monthly_df = load_db_monthly_trends()
+    if monthly_df is not None and not monthly_df.empty:
+        fig_month = go.Figure()
+        # Bar: Monthly Sales (Left Axis)
+        fig_month.add_trace(go.Bar(
+            x=monthly_df["year_month"],
+            y=monthly_df["monthly_sales"],
+            name="Doanh thu ($)",
+            marker_color="#3B82F6",
+            hovertemplate="<b>Tháng %{x}</b><br>Doanh thu: $%{y:,.2f}<br>Số đơn hàng: %{customdata[0]:,}<extra></extra>",
+            customdata=monthly_df[["total_orders", "margin_pct"]].values
+        ))
+        # Line: Monthly Profit (Right Axis)
+        fig_month.add_trace(go.Scatter(
+            x=monthly_df["year_month"],
+            y=monthly_df["monthly_profit"],
+            name="Lợi nhuận ($)",
+            yaxis="y2",
+            mode="lines+markers",
+            line=dict(color="#10B981", width=3),
+            marker=dict(size=6),
+            hovertemplate="<b>Tháng %{x}</b><br>Lợi nhuận: $%{y:,.2f}<br>Biên lợi nhuận: %{customdata[1]:.2f}%<extra></extra>",
+            customdata=monthly_df[["total_orders", "margin_pct"]].values
+        ))
+        fig_month.update_layout(
+            title="Biểu đồ Doanh thu (Cột - Trục trái) và Lợi nhuận (Đường - Trục phải) theo Tháng",
+            xaxis=dict(title="Tháng (Year-Month)", tickangle=-45),
+            yaxis=dict(title="Doanh thu ($)", showgrid=True),
+            yaxis2=dict(title="Lợi nhuận ($)", overlaying="y", side="right", showgrid=False),
+            legend=dict(x=0.01, y=0.99, bgcolor="rgba(255,255,255,0.7)"),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_month, use_container_width=True)
+
     st.divider()
     
     st.subheader("⚠️ Trung tâm Cảnh báo Rủi ro Nghiệp vụ (Risk Alert Hotspots)")
@@ -351,13 +405,47 @@ with tab3:
 # =============================================================================
 with tab4:
     st.subheader("4. Khai phá Giỏ hàng & Cơ hội Bán chéo (Market Basket & Cross-Selling - Live Data từ PostgreSQL)")
-    st.markdown("Khai phá luật kết hợp bằng thuật toán **Apriori** trên 25,035 giỏ hàng thực tế với ràng buộc: $\\text{Lift} > 1.2$.")
+    st.markdown("""
+    Hệ thống khai phá tập mục phổ biến và luật kết hợp (Association Rules) bằng thuật toán **Apriori** 
+    trên **25,035 đơn hàng** từ kho dữ liệu, tìm ra các sản phẩm khách hàng thường mua đồng thời để phục vụ bán chéo (Cross-Selling).
+    """)
     
     live_rules = load_db_rules()
     if live_rules is not None and not live_rules.empty:
-        st.dataframe(live_rules, use_container_width=True)
-        st.caption(f"Đang hiển thị {len(live_rules)} luật kết hợp có hệ số Lift cao nhất được trích xuất trực tiếp từ bảng `dss.association_rule`.")
+        # Scorecard banner for rules
+        r_c1, r_c2, r_c3 = st.columns(3)
+        r_c1.metric("Tổng số Luật khai phá", f"{len(live_rules)} luật", "Active trong CSDL")
+        r_c2.metric("Hệ số Lift cao nhất (Max Lift)", f"{float(live_rules['Lift'].max()):.2f}x", "Xác suất mua kèm vượt trội")
+        r_c3.metric("Độ tin cậy cao nhất (Max Conf)", f"{float(live_rules['Confidence (%)'].max()):.1f}%", "Tỷ lệ mua kèm thực tế")
+        
+        # Interactive Filter
+        min_lift_filter = st.slider("Lọc theo Hệ số Lift tối thiểu:", min_value=1.0, max_value=float(round(live_rules["Lift"].max(), 1)), value=1.0, step=0.5)
+        filtered_rules = live_rules[live_rules["Lift"] >= min_lift_filter]
+        
+        st.dataframe(filtered_rules, use_container_width=True)
+        st.caption(f"Đang hiển thị {len(filtered_rules)} / {len(live_rules)} luật kết hợp trích xuất trực tiếp từ bảng `dss.association_rule`.")
     else:
-        st.warning("Chưa tìm thấy luật kết hợp trong bảng dss.association_rule. Hãy chạy lệnh: `python -m src.dss.association.run --level product --min-count 3`")
-    
-    st.info("💡 **Gợi ý ứng dụng thực tiễn:** Tích hợp trực tiếp danh sách luật kết hợp này vào thuật toán gợi ý giỏ hàng (Shopping Cart Recommendations) hoặc chiến dịch email marketing tự động gửi cho khách hàng sau khi thanh toán.")
+        st.warning("Chưa tìm thấy luật kết hợp trong bảng dss.association_rule. Hãy chạy lệnh khai phá giỏ hàng bên dưới.")
+
+    with st.expander("🛠️ Hướng dẫn Lệnh CLI để Huấn luyện & Cập nhật Luật Giỏ hàng mới vào CSDL"):
+        st.markdown("""
+        **1. Khai phá cấp độ Ngành hàng con (Sub-Category) - Rất thích hợp cho gợi ý danh mục:**
+        ```powershell
+        python -m src.dss.association.run --level sub_category --min-support 0.005 --min-confidence 0.10 --min-lift 1.05
+        ```
+        *Kết quả thực tế:* Khai phá thành công 14 luật (Copiers $\\to$ Labels, Appliances $\\to$ Paper, v.v.).
+
+        **2. Khai phá cấp độ Mặt hàng chi tiết (Product SKU) - Dành cho Bundle Sản phẩm cụ thể:**
+        ```powershell
+        python -m src.dss.association.run --level product --min-count 3 --min-confidence 0.10 --min-lift 1.2
+        ```
+        *Kết quả thực tế:* Khai phá thành công 27 luật với Lift cực đại lên tới 315.57x (ví dụ: Memorex Flash Drive $\\leftrightarrow$ Jiffy Mailers).
+
+        **3. Truy vấn trực tiếp trong pgAdmin / PostgreSQL:**
+        ```sql
+        SELECT antecedent_names, consequent_names, ROUND(support*100, 3) AS supp_pct, ROUND(confidence*100, 2) AS conf_pct, ROUND(lift, 2) AS lift
+        FROM dss.association_rule
+        ORDER BY lift DESC
+        LIMIT 10;
+        ```
+        """)
