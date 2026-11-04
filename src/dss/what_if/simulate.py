@@ -4,7 +4,45 @@ Simulates the effect of adjusting discount rates on sales volume, revenue,
 and net profit based on Price Elasticity of Demand (e).
 """
 
-from typing import Dict, Any
+import sys
+from typing import Dict, Any, Optional, Tuple
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+def fetch_baseline_from_db(market: Optional[str] = None, category: Optional[str] = None) -> Tuple[float, float, float]:
+    """
+    Fetch baseline sales, profit, and avg discount from Gold schema fact and dimensions.
+    """
+    try:
+        from src.pipeline.database import create_db_engine
+        from src.pipeline.executor import query_sql
+        engine = create_db_engine()
+        where_clauses = []
+        if market and market.strip() and market.lower() != "all":
+            where_clauses.append(f"g.market = '{market.strip()}'")
+        if category and category.strip() and category.lower() != "all":
+            where_clauses.append(f"p.category = '{category.strip()}'")
+        where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        
+        sql = f"""
+        SELECT 
+            COALESCE(SUM(f.sales), 0) AS total_sales,
+            COALESCE(SUM(f.profit), 0) AS total_profit,
+            COALESCE(AVG(f.discount), 0.15) AS avg_discount
+        FROM gold.fact_sales f
+        JOIN gold.dim_geography g ON f.geography_key = g.geography_key
+        JOIN gold.dim_product p ON f.product_key = p.product_key
+        {where_str};
+        """
+        df = query_sql(engine, sql)
+        if not df.empty and float(df.iloc[0]["total_sales"]) > 0:
+            return float(df.iloc[0]["total_sales"]), float(df.iloc[0]["total_profit"]), float(df.iloc[0]["avg_discount"])
+    except Exception:
+        pass
+    return 1000000.0, 120000.0, 0.15
 
 def run_what_if_simulation(
     baseline_sales: float,
@@ -45,20 +83,20 @@ def run_what_if_simulation(
     
     # Prescriptive Recommendation Rule
     if simulated_margin < 5.0 or simulated_profit < 0:
-        status = "REJECT / DANGER"
+        status = "[!] WARNING / REJECT"
         message = (
-            f"TĂNG CHIẾT KHẤU LÀM LỖ VỐN HOẶC BIÊN LỢI NHUẬN RƠI XUỐNG DƯỚI 5% ({simulated_margin:.2f}%). "
-            f"Lợi nhuận ròng giảm {profit_diff_pct:.1f}%. Hệ thống khuyến nghị TỪ CHỐI kịch bản này."
+            f"Tăng chiết khấu làm xói mòn lợi nhuận ròng (lợi nhuận giảm {profit_diff_pct:.1f}%), "
+            f"biên lợi nhuận chỉ còn {simulated_margin:.2f}%. Không khuyến nghị áp dụng!"
         )
     elif simulated_profit < baseline_profit:
-        status = "CAUTION"
+        status = "[*] CAUTION"
         message = (
             f"Doanh số tăng {sales_diff_pct:.1f}% nhưng không đủ bù đắp mức giảm giá bán. "
             f"Lợi nhuận giảm ${abs(simulated_profit - baseline_profit):,.2f} ({profit_diff_pct:.1f}%). "
             f"Không khuyến nghị áp dụng nếu mục tiêu là tối đa hóa lợi nhuận."
         )
     else:
-        status = "APPROVE / VIABLE"
+        status = "[+] APPROVE / VIABLE"
         message = (
             f"KỊCH BẢN KHẢ THI! Lợi nhuận ròng tăng ${simulated_profit - baseline_profit:,.2f} (+{profit_diff_pct:.1f}%), "
             f"biên lợi nhuận an toàn ({simulated_margin:.2f}%). Khuyến nghị phê duyệt."
@@ -85,27 +123,76 @@ def run_what_if_simulation(
         }
     }
 
-if __name__ == "__main__":
+def main():
     import argparse
-    import sys
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    import json
+
     parser = argparse.ArgumentParser(description="What-If Simulation CLI")
-    parser.add_argument("--sales", type=float, default=1000000.0)
-    parser.add_argument("--profit", type=float, default=120000.0)
-    parser.add_argument("--base-discount", type=float, default=0.15)
-    parser.add_argument("--discount-adj", type=float, default=0.05)
-    parser.add_argument("--elasticity", type=float, default=1.4)
+    parser.add_argument("--market", type=str, default=None, help="Geographic market filter (e.g. APAC, EU, US)")
+    parser.add_argument("--category", type=str, default=None, help="Product category filter (e.g. Furniture, Technology)")
+    parser.add_argument("--discount", type=float, default=None, help="Discount adjustment (+0.05 for +5%)")
+    parser.add_argument("--discount-adj", type=float, default=None, help="Alias for --discount")
+    parser.add_argument("--elasticity", type=float, default=1.4, help="Price elasticity of demand (e > 1 is elastic)")
+    parser.add_argument("--sales", type=float, default=None, help="Manual override for baseline sales")
+    parser.add_argument("--profit", type=float, default=None, help="Manual override for baseline profit")
+    parser.add_argument("--base-discount", type=float, default=None, help="Manual override for baseline discount")
+    parser.add_argument("--json", action="store_true", help="Output pure JSON format")
     args = parser.parse_args()
 
+    # Determine discount adjustment
+    if args.discount is not None:
+        discount_adj = args.discount
+    elif args.discount_adj is not None:
+        discount_adj = args.discount_adj
+    else:
+        discount_adj = 0.05
+
+    # Determine baseline values (from DB or manual override)
+    if args.sales is not None and args.profit is not None:
+        b_sales = args.sales
+        b_profit = args.profit
+        b_discount = args.base_discount if args.base_discount is not None else 0.15
+    else:
+        b_sales, b_profit, b_discount = fetch_baseline_from_db(market=args.market, category=args.category)
+        if args.base_discount is not None:
+            b_discount = args.base_discount
+
     res = run_what_if_simulation(
-        baseline_sales=args.sales,
-        baseline_profit=args.profit,
-        baseline_discount=args.base_discount,
-        discount_adjustment=args.discount_adj,
+        baseline_sales=b_sales,
+        baseline_profit=b_profit,
+        baseline_discount=b_discount,
+        discount_adjustment=discount_adj,
         elasticity=args.elasticity
     )
-    import json
-    print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    if args.json:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        tgt_market = args.market if args.market else "Global"
+        tgt_category = args.category if args.category else "All Categories"
+        b = res["baseline"]
+        s = res["simulated"]
+        r = res["recommendation"]
+        print("=" * 60)
+        print("              WHAT-IF DECISION SIMULATION REPORT")
+        print("=" * 60)
+        print(f"Target: Market = {tgt_market} | Category = {tgt_category}")
+        print(f"Parameters: Discount Adjustment = {discount_adj*100:+.1f}% | Elasticity = {args.elasticity:.2f}")
+        print()
+        print("[BASELINE CURRENT STATE]")
+        print(f"  - Sales:        ${b['sales']:>14,.2f}")
+        print(f"  - Net Profit:   ${b['profit']:>14,.2f}")
+        print(f"  - Profit Margin:{b['margin_pct']:>13.2f}%")
+        print(f"  - Base Discount:{b['discount_pct']:>13.2f}%")
+        print()
+        print("[SIMULATED SCENARIO]")
+        print(f"  - Expected Sales:  ${s['sales']:>11,.2f} ({s['sales_change_pct']:+.2f}%)")
+        print(f"  - Expected Profit: ${s['profit']:>11,.2f} ({s['profit_change_pct']:+.2f}%)")
+        print(f"  - Expected Margin:     {s['margin_pct']:>9.2f}% ({s['margin_pct'] - b['margin_pct']:+.2f}%)")
+        print()
+        print("[DECISION RECOMMENDATION]")
+        print(f"  {r['status']}: {r['message']}")
+        print("=" * 60)
+
+if __name__ == "__main__":
+    main()

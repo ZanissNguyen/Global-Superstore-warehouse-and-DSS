@@ -41,7 +41,7 @@ pip install -r requirements.txt
 
 Nếu cần chạy thêm các tính năng Web App và DSS Machine Learning, đảm bảo các thư viện sau đã có mặt:
 ```powershell
-pip install streamlit scikit-learn statsmodels mlxtend
+pip install streamlit plotly scikit-learn statsmodels mlxtend fastapi uvicorn
 ```
 
 ---

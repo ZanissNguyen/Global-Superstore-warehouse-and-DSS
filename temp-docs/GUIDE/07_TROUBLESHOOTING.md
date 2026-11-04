@@ -98,3 +98,43 @@ sqlalchemy.exc.OperationalError: connection to server at "localhost", port 5432 
    ```powershell
    docker logs superstore_postgres
    ```
+
+---
+
+## 6. LỖI LỆNH STREAMLIT HOẶC UVICORN KHÔNG ĐƯỢC NHẬN DIỆN (COMMANDNOTFOUNDEXCEPTION)
+
+### Triệu chứng:
+```text
+streamlit : The term 'streamlit' is not recognized as the name of a cmdlet, function, script file, or operable program.
+```
+
+### Nguyên nhân:
+Thư mục `Scripts` của Python (ví dụ: `C:\Users\<User>\AppData\Roaming\Python\Python312\Scripts`) chưa được cấu hình vào biến môi trường hệ thống (`PATH`) của Windows.
+
+### Cách khắc phục:
+Chạy thông qua module Python với cờ `-m` (luôn hoạt động ổn định trên mọi máy tính):
+```powershell
+python -m streamlit run src/app/main.py
+```
+Tương tự đối với dịch vụ FastAPI:
+```powershell
+python -m uvicorn src.app.api.main:app --reload --port 8000
+```
+
+---
+
+## 7. LỖI CARDINALITY VIOLATION KHI NẠP DIM_GEOGRAPHY
+
+### Triệu chứng:
+```text
+psycopg2.errors.CardinalityViolation: ON CONFLICT DO UPDATE command cannot affect row a second time
+```
+
+### Nguyên nhân:
+Trong tập dữ liệu Global Superstore, có những thành phố/tiểu bang cùng tên xuất hiện ở các thị trường khác nhau hoặc cùng một vị trí địa lý nhưng đơn hàng được phân bổ vào các vùng quản lý khác nhau (ví dụ: `Vienna, Austria` thuộc cả `EMEA` và `EU`).
+
+### Cách khắc phục:
+Nhóm đã chuẩn hóa cấu trúc bảng và câu lệnh nạp:
+1. Mở rộng ràng buộc duy nhất trong `gold.dim_geography` thành:
+   `UNIQUE (country, state, city, postal_code, market, region)`
+2. Sử dụng `SELECT DISTINCT ON (country, state, city, postal_code, market, region)` trong `src/sql/gold/dimensions/load_dim_geography.sql` để loại trừ hoàn toàn việc xung đột bản ghi trong cùng một lệnh thực thi.

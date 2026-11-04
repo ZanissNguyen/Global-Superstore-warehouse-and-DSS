@@ -81,19 +81,29 @@ Parameters: Discount Adjustment = +5.0% | Elasticity = 1.40
 
 ## 4. HƯỚNG DẪN CHẠY KHAI PHÁ LUẬT KẾT HỢP (ASSOCIATION RULES)
 
-Để tìm kiếm các sản phẩm thường được mua cùng nhau trong cùng một đơn hàng:
-```powershell
-python -m src.dss.association.run --algorithm apriori --min-support 0.005 --min-confidence 0.25 --min-lift 1.2
-```
-- **Quy trình xử lý:**
-  1. Trích xuất các dòng đơn hàng gồm `order_id`, `product_id` từ `gold.fact_sales`.
-  2. Tạo ma trận giỏ hàng (Basket Transaction Matrix).
-  3. Áp dụng thuật toán Apriori hoặc FP-Growth để tìm tập mục phổ biến (Frequent Itemsets).
-  4. Sinh các luật kết hợp $A \longrightarrow B$ và lọc theo ngưỡng: $\text{Support} \ge 0.5\%$, $\text{Confidence} \ge 25\%$, $\text{Lift} > 1.2$.
-  5. Nối với `gold.dim_product` để lấy tên sản phẩm rõ nghĩa.
-  6. Lưu trữ vào `dss.association_run` và `dss.association_rule`.
+Để tìm kiếm các sản phẩm thường được mua cùng nhau trong cùng một đơn hàng, hệ thống hỗ trợ 2 cấp độ phân tích:
 
-### Kiểm tra kết quả luật kết hợp trong CSDL:
+### 4.1. Khai phá ở cấp độ Sản phẩm SKU chi tiết (Product Level):
+Do kho dữ liệu có hơn 10.000 mặt hàng SKU khác nhau trong 25.035 đơn hàng, xác suất hai sản phẩm cụ thể xuất hiện cùng lúc trong hơn 125 đơn hàng (`support >= 0.5%`) là rất thấp. Do đó, ta thiết lập lọc theo số lần đồng xuất hiện tối thiểu (`--min-count`):
+```powershell
+python -m src.dss.association.run --level product --min-count 3
+```
+- **Kết quả:** Tìm ra 27 luật kết hợp có độ tin cậy cao và hệ số Lift vượt trội (lên tới **315.57**):
+  - `Jiffy Mailers, Set of 50` $\longrightarrow$ `Memorex Flash Drive, USB` (Lift: 315.57)
+  - `Brother Fax and Copier, Color` $\longrightarrow$ `SanDisk Message Books, Recycled` (Lift: 223.53)
+  - `Apple Office Telephone, with Caller ID` $\longrightarrow$ `Sharp Copy Machine, Color` (Lift: 96.04)
+
+### 4.2. Khai phá ở cấp độ Tiểu ngành hàng (Sub-Category Level):
+Dành cho phân tích vĩ mô 17 phân nhóm sản phẩm:
+```powershell
+python -m src.dss.association.run --level sub_category --min-support 0.005 --min-confidence 0.10 --min-lift 1.05
+```
+- **Kết quả:** Phát hiện 14 luật kết hợp giữa các ngành hàng bổ trợ:
+  - `Copiers` $\longrightarrow$ `Labels` (Lift: 1.17)
+  - `Appliances` $\longrightarrow$ `Paper` (Lift: 1.16)
+  - `Appliances` $\longrightarrow$ `Binders` (Lift: 1.08)
+
+### 4.3. Kiểm tra kết quả luật kết hợp trong CSDL:
 ```sql
 SELECT 
     antecedent_names AS "San_Pham_Mua_Truoc",

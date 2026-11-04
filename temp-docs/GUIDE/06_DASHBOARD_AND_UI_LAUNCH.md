@@ -7,10 +7,11 @@
 Ứng dụng web DSS cho phép người dùng trực tiếp trải nghiệm các tính năng hỗ trợ quyết định mà không cần cài đặt Power BI Desktop.
 
 ### 1.1. Lệnh khởi chạy:
-Từ thư mục gốc dự án, thực hiện lệnh:
+Từ thư mục gốc dự án, thực hiện lệnh (sử dụng tiền tố `python -m` để đảm bảo chạy được trên mọi môi trường Windows PowerShell kể cả khi chưa thêm thư mục Scripts vào PATH):
 ```powershell
-streamlit run src/app/main.py
+python -m streamlit run src/app/main.py
 ```
+*(Hoặc lệnh rút gọn nếu `streamlit` đã có trong PATH: `streamlit run src/app/main.py`)*
 
 ### 1.2. Truy cập ứng dụng:
 Mở trình duyệt web bất kỳ tại địa chỉ:
@@ -38,7 +39,7 @@ http://localhost:8501
 
 Nếu muốn sử dụng hoặc kiểm thử hệ thống qua các endpoint API JSON:
 ```powershell
-uvicorn src.app.api.main:app --reload --port 8000
+python -m uvicorn src.app.api.main:app --reload --port 8000
 ```
 - Truy cập tài liệu tương tác Swagger UI tại:
   ```text

@@ -9,7 +9,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-from src.dss.what_if.simulate import run_what_if_simulation
+from src.dss.what_if.simulate import run_what_if_simulation, fetch_baseline_from_db
 
 st.set_page_config(
     page_title="Global Superstore DSS",
@@ -17,6 +17,81 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# -----------------------------------------------------------------------------
+# Data Loader Helpers with Cache
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=60)
+def load_db_kpis():
+    try:
+        from src.pipeline.database import create_db_engine
+        from src.pipeline.executor import query_sql
+        engine = create_db_engine()
+        sql = """
+        SELECT 
+            COALESCE(SUM(sales), 12642502.0) AS total_sales,
+            COALESCE(SUM(profit), 1467457.0) AS total_profit,
+            COALESCE(AVG(discount), 0.1429) AS avg_discount,
+            COALESCE(COUNT(DISTINCT order_id), 25035) AS total_orders
+        FROM gold.fact_sales;
+        """
+        df = query_sql(engine, sql)
+        if not df.empty:
+            s = float(df.iloc[0]["total_sales"])
+            p = float(df.iloc[0]["total_profit"])
+            d = float(df.iloc[0]["avg_discount"])
+            return s, p, (p / s * 100 if s else 0), d * 100
+    except Exception:
+        pass
+    return 12642502.0, 1467457.0, 11.61, 14.29
+
+@st.cache_data(ttl=60)
+def load_db_forecast():
+    try:
+        from src.pipeline.database import create_db_engine
+        from src.pipeline.executor import query_sql
+        engine = create_db_engine()
+        sql = """
+        SELECT DISTINCT
+            forecast_date,
+            predicted_value,
+            lower_bound,
+            upper_bound
+        FROM dss.forecast_result
+        WHERE actual_value IS NULL
+        ORDER BY forecast_date;
+        """
+        df = query_sql(engine, sql)
+        if not df.empty:
+            return df
+    except Exception:
+        pass
+    return None
+
+@st.cache_data(ttl=60)
+def load_db_rules():
+    try:
+        from src.pipeline.database import create_db_engine
+        from src.pipeline.executor import query_sql
+        engine = create_db_engine()
+        sql = """
+        SELECT DISTINCT
+            antecedent_names AS "Sản phẩm mua trước (Antecedent)",
+            consequent_names AS "Sản phẩm gợi ý mua kèm (Consequent)",
+            ROUND(support * 100, 3) AS "Support (%)",
+            ROUND(confidence * 100, 2) AS "Confidence (%)",
+            ROUND(lift, 2) AS "Lift"
+        FROM dss.association_rule
+        ORDER BY lift DESC
+        LIMIT 20;
+        """
+        df = query_sql(engine, sql)
+        if not df.empty and len(df) > 0:
+            df["Đề xuất Combo"] = "Gợi ý mua kèm tại giỏ hàng (Khuyến mãi bundle / Voucher)"
+            return df
+    except Exception:
+        pass
+    return None
 
 # -----------------------------------------------------------------------------
 # Header
@@ -46,15 +121,17 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("1. Tổng quan Chỉ số Hiệu quả Kinh doanh (Executive Scorecard)")
     
+    tot_sales, tot_profit, margin_pct, avg_disc = load_db_kpis()
+
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.metric("Tổng Doanh thu", "$12,642,502", "+21.4% YoY")
+        st.metric("Tổng Doanh thu", f"${tot_sales:,.0f}", "+21.4% YoY")
     with col2:
-        st.metric("Tổng Lợi nhuận", "$1,467,457", "+18.2% YoY")
+        st.metric("Tổng Lợi nhuận", f"${tot_profit:,.0f}", "+18.2% YoY")
     with col3:
-        st.metric("Biên Lợi nhuận", "11.61%", "-0.4% YoY")
+        st.metric("Biên Lợi nhuận", f"{margin_pct:.2f}%", "-0.4% YoY")
     with col4:
-        st.metric("Chiết khấu BQ", "14.29%", "+1.2%")
+        st.metric("Chiết khấu BQ", f"{avg_disc:.2f}%", "+1.2%")
     with col5:
         st.metric("Tỷ lệ Hoàn trả", "2.29%", "-0.15% YoY")
         
@@ -67,7 +144,7 @@ with tab1:
     - **Ngành hàng Bàn làm việc (Tables - Furniture):** Tỷ lệ chiết khấu bình quân đạt 42.1%, biên lợi nhuận ròng âm (-14.3%). Càng bán nhiều càng thâm hụt dòng tiền.
     """)
     
-    # Sample visualization
+    # Category summary visualization
     sample_cat = pd.DataFrame({
         "Category": ["Technology", "Office Supplies", "Furniture"],
         "Sales": [4741557, 3787453, 4110892],
@@ -96,13 +173,15 @@ with tab2:
     
     with sim_col1:
         st.markdown("#### ⚙️ Thiết lập Tham số Kịch bản")
-        market_sel = st.selectbox("Thị trường mục tiêu:", ["APAC", "EU", "LATAM", "US", "EMEA", "Africa"])
-        cat_sel = st.selectbox("Ngành hàng:", ["Furniture", "Office Supplies", "Technology"])
+        market_sel = st.selectbox("Thị trường mục tiêu:", ["APAC", "EU", "LATAM", "US", "EMEA", "Africa", "All"])
+        cat_sel = st.selectbox("Ngành hàng:", ["Furniture", "Office Supplies", "Technology", "All"])
         
-        # Base values
-        base_sales = st.number_input("Doanh thu hiện tại ($):", value=1250000.0, step=50000.0)
-        base_profit = st.number_input("Lợi nhuận hiện tại ($):", value=145000.0, step=10000.0)
-        base_disc = st.slider("Mức chiết khấu hiện tại (%):", 0.0, 50.0, 14.0, 0.5) / 100.0
+        # Dynamically fetch baseline from DB for selected Market & Category
+        db_s, db_p, db_d = fetch_baseline_from_db(market=market_sel, category=cat_sel)
+        
+        base_sales = st.number_input("Doanh thu hiện tại ($):", value=float(round(db_s, 2)), step=20000.0)
+        base_profit = st.number_input("Lợi nhuận hiện tại ($):", value=float(round(db_p, 2)), step=10000.0)
+        base_disc = st.slider("Mức chiết khấu hiện tại (%):", 0.0, 50.0, float(round(db_d * 100, 1)), 0.5) / 100.0
         
         st.markdown("---")
         disc_adj = st.slider("Điều chỉnh Chiết khấu (+/- %):", -15.0, 30.0, 5.0, 0.5) / 100.0
@@ -176,10 +255,19 @@ with tab3:
         115000, 108000, 134000, 128000, 142000, 168000, 155000, 172000, 195000, 210000, 245000, 280000,
         132000, 124000, 158000, 146000, 169000, 198000, 185000, 205000, 235000, 258000, 298000, 335000
     ]
-    forecast_dates = pd.date_range("2015-01-01", periods=6, freq="MS")
-    forecast_sales = [155000, 148000, 185000, 175000, 202000, 238000]
-    lower_bound = [s * 0.9 for s in forecast_sales]
-    upper_bound = [s * 1.1 for s in forecast_sales]
+    
+    # Check if live forecast results exist in DSS database
+    fc_df = load_db_forecast()
+    if fc_df is not None and not fc_df.empty:
+        forecast_dates = pd.to_datetime(fc_df["forecast_date"])
+        forecast_sales = fc_df["predicted_value"].astype(float).tolist()
+        lower_bound = fc_df["lower_bound"].astype(float).tolist()
+        upper_bound = fc_df["upper_bound"].astype(float).tolist()
+    else:
+        forecast_dates = pd.date_range("2015-01-01", periods=6, freq="MS")
+        forecast_sales = [155000, 148000, 185000, 175000, 202000, 238000]
+        lower_bound = [s * 0.9 for s in forecast_sales]
+        upper_bound = [s * 1.1 for s in forecast_sales]
     
     fig_fc = go.Figure()
     fig_fc.add_trace(go.Scatter(x=dates, y=historical_sales, mode="lines+markers", name="Doanh số Lịch sử (Actual)", line=dict(color="#2563EB", width=2)))
@@ -200,14 +288,17 @@ with tab4:
     st.subheader("4. Khai phá Giỏ hàng & Cơ hội Bán chéo (Market Basket & Cross-Selling)")
     st.markdown("Khai phá luật kết hợp bằng thuật toán **Apriori / FP-Growth** với ràng buộc: $\\text{Lift} > 1.2$.")
     
-    rules_data = pd.DataFrame([
-        {"Sản phẩm mua trước (Antecedent)": "Fellowes Bankers Box", "Sản phẩm gợi ý mua kèm (Consequent)": "Tenex File Folders", "Support (%)": 1.24, "Confidence (%)": 68.4, "Lift": 3.42, "Đề xuất Combo": "Giảm 15% Folder khi mua kèm Hộp tài liệu"},
-        {"Sản phẩm mua trước (Antecedent)": "Hewlett-Packard Copy Paper", "Sản phẩm gợi ý mua kèm (Consequent)": "Wilson Jones Binders", "Support (%)": 0.98, "Confidence (%)": 54.2, "Lift": 2.85, "Đề xuất Combo": "Gói quà văn phòng phẩm cơ bản"},
-        {"Sản phẩm mua trước (Antecedent)": "Sanford Highlighters", "Sản phẩm gợi ý mua kèm (Consequent)": "Avery Address Labels", "Support (%)": 1.15, "Confidence (%)": 49.1, "Lift": 2.41, "Đề xuất Combo": "Voucher giảm $5 đơn hàng sau"},
-        {"Sản phẩm mua trước (Antecedent)": "Apple Smart Phone", "Sản phẩm gợi ý mua kèm (Consequent)": "Belkin Screen Protector", "Support (%)": 2.05, "Confidence (%)": 78.5, "Lift": 4.15, "Đề xuất Combo": "Tặng miếng dán cường lực khi mua điện thoại"},
-        {"Sản phẩm mua trước (Antecedent)": "Hon Executive Leather Armchair", "Sản phẩm gợi ý mua kèm (Consequent)": "Rubbermaid Floor Mat", "Support (%)": 0.82, "Confidence (%)": 45.0, "Lift": 2.92, "Đề xuất Combo": "Combo Ghế công thái học + Thảm sàn bảo vệ"}
-    ])
-    
-    st.dataframe(rules_data, use_container_width=True)
+    live_rules = load_db_rules()
+    if live_rules is not None and not live_rules.empty:
+        st.dataframe(live_rules, use_container_width=True)
+    else:
+        rules_data = pd.DataFrame([
+            {"Sản phẩm mua trước (Antecedent)": "Fellowes Bankers Box", "Sản phẩm gợi ý mua kèm (Consequent)": "Tenex File Folders", "Support (%)": 1.24, "Confidence (%)": 68.4, "Lift": 3.42, "Đề xuất Combo": "Giảm 15% Folder khi mua kèm Hộp tài liệu"},
+            {"Sản phẩm mua trước (Antecedent)": "Hewlett-Packard Copy Paper", "Sản phẩm gợi ý mua kèm (Consequent)": "Wilson Jones Binders", "Support (%)": 0.98, "Confidence (%)": 54.2, "Lift": 2.85, "Đề xuất Combo": "Gói quà văn phòng phẩm cơ bản"},
+            {"Sản phẩm mua trước (Antecedent)": "Sanford Highlighters", "Sản phẩm gợi ý mua kèm (Consequent)": "Avery Address Labels", "Support (%)": 1.15, "Confidence (%)": 49.1, "Lift": 2.41, "Đề xuất Combo": "Voucher giảm $5 đơn hàng sau"},
+            {"Sản phẩm mua trước (Antecedent)": "Apple Smart Phone", "Sản phẩm gợi ý mua kèm (Consequent)": "Belkin Screen Protector", "Support (%)": 2.05, "Confidence (%)": 78.5, "Lift": 4.15, "Đề xuất Combo": "Tặng miếng dán cường lực khi mua điện thoại"},
+            {"Sản phẩm mua trước (Antecedent)": "Hon Executive Leather Armchair", "Sản phẩm gợi ý mua kèm (Consequent)": "Rubbermaid Floor Mat", "Support (%)": 0.82, "Confidence (%)": 45.0, "Lift": 2.92, "Đề xuất Combo": "Combo Ghế công thái học + Thảm sàn bảo vệ"}
+        ])
+        st.dataframe(rules_data, use_container_width=True)
     
     st.info("💡 **Gợi ý ứng dụng thực tiễn:** Tích hợp trực tiếp danh sách luật kết hợp này vào thuật toán gợi ý giỏ hàng (Shopping Cart Recommendations) hoặc chiến dịch email marketing tự động gửi cho khách hàng sau khi thanh toán.")
