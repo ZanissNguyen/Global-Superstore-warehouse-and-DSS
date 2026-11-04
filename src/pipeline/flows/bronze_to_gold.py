@@ -1,30 +1,53 @@
-# from etl.bronze.load import run as load_bronze
-# from etl.silver.transform import run as transform_silver
-# from etl.gold.load_dimensions import run as load_dimensions
-# from etl.gold.load_facts import run as load_facts
+"""
+Master Pipeline Flow: Bronze -> Silver -> Gold
+Executes full data lifecycle from raw file ingestion to star schema and data marts.
+"""
 
-# def run_pipeline(input_path, engine, dry_run=False):
-#     # 1. Ingestion + Bronze
-#     batch_id = load_bronze(
-#         input_path=input_path,
-#         engine=engine,
-#         dry_run=dry_run
-#     )
+from pathlib import Path
+from src.pipeline.database import create_db_engine
+from src.pipeline.cli import parse_args
 
-#     # 2. Silver
-#     transform_silver(
-#         engine=engine,
-#         batch_id=batch_id,
-#         dry_run=dry_run
-#     )
+from src.etl.bronze.data_to_bronze import main as run_bronze
+from src.etl.silver.transform import main as run_silver
+from src.etl.silver.validate import run_silver_validation
+from src.etl.gold.load_dimensions import main as run_gold_dimensions
+from src.etl.gold.load_facts import main as run_gold_facts
+from src.etl.gold.validate import run_gold_validation
 
-#     # 3. Gold
-#     load_dimensions(engine=engine, dry_run=dry_run)
-#     load_facts(engine=engine, dry_run=dry_run)
+def run_pipeline(input_path: Path, dry_run: bool = False, rollback: bool = False):
+    engine = create_db_engine()
+    print("=" * 60)
+    print(f"STARTING FULL MEDALLION ETL PIPELINE FOR: {input_path}")
+    print("=" * 60)
 
-#     # 4. Validation
-#     # 5. Refresh Materialized Views
-#     # REFRESH MATERIALIZED VIEW gold.mv_sales_mart;
-#     # REFRESH MATERIALIZED VIEW gold.mv_product_mart;
-#     # REFRESH MATERIALIZED VIEW gold.mv_customer_mart;
-#     # Các marts cần quan tâm thứ tự các câu truy vấn nếu chúng có quan hệ phụ thuộc với nhau.
+    # 1. Bronze Layer
+    print("\n>>> STEP 1: BRONZE INGESTION >>>")
+    run_bronze(input_path=input_path, dry_run=dry_run, rollback=rollback)
+
+    # 2. Silver Layer
+    print("\n>>> STEP 2: SILVER TRANSFORMATION >>>")
+    run_silver(dry_run=dry_run, rollback=rollback)
+    if not dry_run:
+        run_silver_validation(engine)
+
+    # 3. Gold Layer
+    print("\n>>> STEP 3: GOLD DIMENSIONAL LOADING >>>")
+    run_gold_dimensions(dry_run=dry_run, rollback=rollback)
+    run_gold_facts(dry_run=dry_run, rollback=rollback)
+    if not dry_run:
+        run_gold_validation(engine)
+
+    print("\n" + "=" * 60)
+    print("FULL MEDALLION ETL PIPELINE COMPLETED SUCCESSFULLY!")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    args = parse_args("Master Medallion Pipeline Flow")
+    if not args.input:
+        print("Error: Please provide --input file path.")
+    else:
+        run_pipeline(
+            input_path=args.input,
+            dry_run=args.dry_run,
+            rollback=args.rollback
+        )
