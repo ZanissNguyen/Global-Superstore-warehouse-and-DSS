@@ -38,16 +38,28 @@ SELECT
     TRIM(r."Order ID") AS order_id,
     -- Parse mixed date format (handle both d/m/Y and d-m-Y)
     CASE 
-        WHEN r."Order Date" ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(r."Order Date", 'DD/MM/YYYY')
-        WHEN r."Order Date" ~ '^\d{1,2}-\d{1,2}-\d{4}$' THEN TO_DATE(r."Order Date", 'DD-MM-YYYY')
-        WHEN r."Order Date" ~ '^\d{4}-\d{1,2}-\d{1,2}$' THEN TO_DATE(r."Order Date", 'YYYY-MM-DD')
-        ELSE TO_DATE(r."Order Date", 'DD/MM/YYYY')
+        WHEN TRIM(r."Order Date") ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+            THEN TO_DATE(TRIM(r."Order Date"), 'DD/MM/YYYY')
+
+        WHEN TRIM(r."Order Date") ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+            THEN TO_DATE(TRIM(r."Order Date"), 'DD-MM/YYYY')
+
+        WHEN TRIM(r."Order Date") ~ '^\d{4}-\d{2}-\d{2}'
+            THEN LEFT(TRIM(r."Order Date"), 10)::DATE
+
+        ELSE NULL
     END AS order_date,
     CASE 
-        WHEN r."Ship Date" ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(r."Ship Date", 'DD/MM/YYYY')
-        WHEN r."Ship Date" ~ '^\d{1,2}-\d{1,2}-\d{4}$' THEN TO_DATE(r."Ship Date", 'DD-MM-YYYY')
-        WHEN r."Ship Date" ~ '^\d{4}-\d{1,2}-\d{1,2}$' THEN TO_DATE(r."Ship Date", 'YYYY-MM-DD')
-        ELSE TO_DATE(r."Ship Date", 'DD/MM/YYYY')
+        WHEN TRIM(r."Ship Date") ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+            THEN TO_DATE(TRIM(r."Ship Date"), 'DD/MM/YYYY')
+
+        WHEN TRIM(r."Ship Date") ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+            THEN TO_DATE(TRIM(r."Ship Date"), 'DD-MM/YYYY')
+
+        WHEN TRIM(r."Ship Date") ~ '^\d{4}-\d{2}-\d{2}'
+            THEN LEFT(TRIM(r."Ship Date"), 10)::DATE
+
+        ELSE NULL
     END AS ship_date,
     TRIM(r."Ship Mode") AS ship_mode,
     TRIM(r."Customer ID") AS customer_id,
