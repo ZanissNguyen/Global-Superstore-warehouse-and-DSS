@@ -1,0 +1,353 @@
+=== PAGE 1 ===
+ĐHQG TPHCM
+TRƯỜNG ĐẠI HỌC BÁCH KHOA
+Khoa Khoa học và Kỹthuật Máy tính
+QUY ĐỊNH BÀI TẬP LỚN
+Kho dữliệu và HệhỗtrợQuyết định
+CO4031 - Học kỳ261
+Mã học phần:
+CO4031
+Sốtín chỉ:
+3 (ECTS: 6)
+Học kỳ:
+261 (Năm học 2026–2027)
+Tỷtrọng đánh giá:
+35% tổng điểm môn học
+Giảng viên phụtrách:
+ĐỗThanh Thái
+Tp. HồChí Minh, ngày 10 tháng 09 năm 2026
+
+
+=== PAGE 2 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+Mục lục
+1
+Tổng quan
+2
+1.1
+Mục tiêu bài tập lớn . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.2
+Đối chiếu chuẩn đầu ra học phần . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.3
+Hình thức và quy mô nhóm . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+2
+Lịch trình và các mốc thời gian quan trọng
+3
+3
+Đềtài và dữliệu
+3
+3.1
+Lựa chọn đềtài . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+3.2
+Ví dụlĩnh vực đềtài
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+4
+Thuyết trình
+4
+4.1
+Hình thức thuyết trình . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+4.2
+Yêu cầu thuyết trình trực tiếp . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+4.3
+Yêu cầu video thuyết trình (cho nhóm không thuyết trình trực tiếp) . . . . . . .
+5
+5
+Quy định nộp bài
+5
+5.1
+Thành phần nộp . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+5.2
+Cách thức nộp . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+6
+Tài liệu tham khảo
+5
+Trang 1 / 6
+
+
+=== PAGE 3 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+1
+Tổng quan
+1.1
+Mục tiêu bài tập lớn
+Bài tập lớn (Assignment) của môn học Kho dữliệu và HệhỗtrợQuyết định (CO4031) nhằm
+mục tiêu đánh giá khảnăng của sinh viên trong việc vận dụng kiến thức vềkho dữliệu (Data
+Warehouse) và hệhỗtrợquyết định (Decision Support System) đểgiải quyết một bài toán thực
+tế. Cụthể, bài tập lớn yêu cầu sinh viên:
+1. Phân tích yêu cầu nghiệp vụvà xác định bài toán cần giải quyết.
+2. Thiết kếkho dữliệu theo mô hình đa chiều (star schema / snowflake schema), bao gồm cả
+quy trình ETL.
+3. Hiện thực hệthống hoàn chỉnh với backend (cơ sởdữliệu, ETL, OLAP) và frontend
+(dashboard / giao diện truy vấn).
+4. Phát triển một thành phần hệhỗtrợquyết định (DSS) dựa trên kho dữliệu đã xây dựng.
+5. Đánh giá kết quả, phân tích hạn chếvà đềxuất hướng phát triển.
+6. Trình bày kết quảtrước lớp hoặc qua video.
+1.2
+Đối chiếu chuẩn đầu ra học phần
+Bài tập lớn đóng góp trực tiếp vào các chuẩn đầu ra (Learning Outcomes) sau đây, theo đềcương
+môn học DCMH.CO4031.6.1:
+Bảng 1: Đối chiếu chuẩn đầu ra và hoạt động đánh giá
+Chuẩn đầu ra
+Mô tả
+Bài tập lớn
+L.O.1.1
+Giải thích các khái niệm cơ bản vềDW và DSS
+✓
+L.O.1.2
+Mô tảvai trò của DW trong DSS
+✓
+L.O.1.3
+Nêu ví dụthực tếvềDW và DSS
+✓
+L.O.2.1
+Mô tảquy trình và nguyên lý thiết kếDW
+✓
+L.O.2.2
+Xác định các vấn đềliên quan đến thiết kếDW
+✓
+L.O.2.3
+Thiết kếvà hiện thực được hệthống DW
+✓
+L.O.3.1
+Giải thích khái niệm và đặc tính của MSS và DSS
+✓
+L.O.3.2
+Giải thích các giai đoạn chính trong ra quyết định
+✓
+L.O.3.3
+Minh họa quá trình mô hình hóa trong DSS
+✓
+L.O.4.1
+Giải thích nguyên tắc phân tích, thiết kếDSS
+✓
+L.O.4.2
+Phân tích, thiết kế, hiện thực một DSS đơn giản
+✓
+1.3
+Hình thức và quy mô nhóm
+• Hình thức: Làm việc theo nhóm, mỗi nhóm 2-3 sinh viên.
+• Phân công: Mọi thành viên đều phải tham gia đóng góp vào công việc chung của nhóm.
+Mỗi thành viên phải có vai trò rõ ràng (ví dụ: thiết kếDW, phát triển ETL, phát triển
+frontend, xây dựng DSS, viết báo cáo).
+Trang 2 / 6
+
+
+=== PAGE 4 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+• Chấm điểm cá nhân: Điểm bài tập lớn của từng cá nhân có thểđược điều chỉnh (cộng/trừ)
+dựa trên mức độđóng góp thực tế, được xác định thông qua peer review và đánh giá của
+giảng viên trong buổi thuyết trình.
+2
+Lịch trình và các mốc thời gian quan trọng
+Học kỳ261 bắt đầu từngày 24/08/2026 (Tuần 1) và kết thúc ngày 06/12/2026 (Tuần 15). Học
+kỳgồm 15 tuần học và 1 tuần nghỉgiữa kỳ(Tuần 8), tổng 16 tuần.
+Bảng 2: Lịch học kỳ261
+Tuần
+Từngày
+Đến ngày
+Hoạt động
+1
+24/08/2026
+30/08/2026
+Chương 1: Tổng quan DW & DSS
+2
+31/08/2026
+06/09/2026
+Chương 1 (tt): Tổng quan DW & DSS
+3
+07/09/2026
+13/09/2026
+Chương 2: Các vấn đềcơ bản trong DW (Quy
+định BTL (10/09))
+4
+14/09/2026
+20/09/2026
+Chương 3: Thiết kếDW
+5
+21/09/2026
+27/09/2026
+Chương 3 (tt)
+6
+28/09/2026
+04/10/2026
+Chương 4: Hệhỗtrợquản lý (MSS)
+7
+05/10/2026
+11/10/2026
+Chương 5: DSS, mô hình và hỗtrợ
+8
+12/10/2026
+18/10/2026
+Nghỉgiữa kỳ
+9
+19/10/2026
+25/10/2026
+Chương 6: Chi tiết DSS
+10
+26/10/2026
+01/11/2026
+Chương 7: Mô hình hóa và phân tích
+11
+02/11/2026
+08/11/2026
+Chương 8: Phát triển DSS
+12
+09/11/2026
+15/11/2026
+Hoàn thiện dựán: Deadline nộp báo cáo (15/11)
+13
+16/11/2026
+22/11/2026
+Thuyết trình, Buổi 1
+14
+23/11/2026
+29/11/2026
+Thuyết trình, Buổi 2
+15
+30/11/2026
+06/12/2026
+Thuyết trình, Buổi 3
+3
+Đềtài và dữliệu
+3.1
+Lựa chọn đềtài
+Mỗi nhóm tựchọn đềtài và dữliệu. Đềtài phải thỏa mãn các yêu cầu tối thiểu sau:
+(a) Đềtài phải liên quan đến việc xây dựng kho dữliệu (Data Warehouse) làm cốt lõi, phục
+vụphân tích và hỗtrợra quyết định.
+(b) Dữliệu nguồn có thểlấy từ: dữliệu mở(open data), Kaggle, UCI Machine Learning
+Repository, dữliệu thực tếtừdoanh nghiệp (có sựđồng ý của chủdữliệu) với quy mô
+đủlớn.
+(c) Đềtài phải có ý nghĩa thực tế: giải quyết một bài toán phân tích hoặc ra quyết định cụthể
+trong một lĩnh vực nhất định.
+Trang 3 / 6
+
+
+=== PAGE 5 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+3.2
+Ví dụlĩnh vực đềtài
+Dưới đây là một sốgợi ý lĩnh vực (sinh viên không giới hạn trong danh sách này):
+Bảng 3: Gợi ý lĩnh vực và đềtài
+Lĩnh vực
+Gợi ý đềtài
+Bán lẻ/ Thương mại
+DW phân tích doanh sốbán hàng đa kênh, hỗtrợquyết định nhập hàng,
+khuyến mãi
+Ngân hàng / Tài chính
+DW phân tích rủi ro tín dụng, phát hiện gian lận, hỗtrợcấp tín dụng
+Y tế
+DW phân tích dịch bệnh, chất lượng điều trị, quản lý thuốc
+Giáo dục
+DW phân tích kết quảhọc tập, dựbáo sinh viên có nguy cơ bỏhọc
+Logistics
+DW phân tích hiệu suất vận tải, tối ưu tuyến đường, quản lý kho bãi
+Thương mại điện tử
+DW phân tích hành vi người dùng, gợi ý sản phẩm, dựbáo nhu cầu
+Nông nghiệp
+DW phân tích năng suất cây trồng, dựbáo thời tiết & giá cảnông sản
+Viễn thông
+DW phân tích churn rate (tỷlệrời mạng), phân khúc khách hàng
+Giao thông đô thị
+DW phân tích lưu lượng giao thông, hỗtrợquy hoạch hạtầng
+4
+Thuyết trình
+4.1
+Hình thức thuyết trình
+Do sốlượng nhóm lớn (dựkiến 21-30 nhóm), mỗi buổi học có 4-5 nhóm thuyết trình trực tiếp.
+Các nhóm không thuyết trình trực tiếp phải quay video thuyết trình và upload lên YouTube
+(chếđộunlisted) hoặc Google Drive, sau đó đính kèm link và trang bìa của báo cáo.
+Bảng 4: Phân bổthuyết trình
+Buổi
+Tuần
+Ngày (Thứ5)
+Hình thức
+1
+13
+19/11/2026
+4-5 nhóm thuyết trình trực tiếp
+2
+14
+26/11/2026
+4-5 nhóm thuyết trình trực tiếp
+3
+15
+03/12/2026
+4-5 nhóm thuyết trình trực tiếp
+• Các nhóm còn lại nộp video thuyết trình (thời lượng 10-15 phút) cùng với báo cáo.
+• Thuyết trình trực tiếp / video: sinh viên đăng ký với giảng viên.
+4.2
+Yêu cầu thuyết trình trực tiếp
+• Thời lượng: 15 phút thuyết trình + 5 phút Q&A.
+• Tất cảthành viên trong nhóm phải tham gia trình bày (chia phần rõ ràng).
+Trang 4 / 6
+
+
+=== PAGE 6 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+4.3
+Yêu cầu video thuyết trình (cho nhóm không thuyết trình trực tiếp)
+• Thời lượng: 10-15 phút.
+• Tất cảthành viên trong nhóm phải xuất hiện và trình bày trong video.
+• Chất lượng: hình ảnh rõ, âm thanh rõ ràng.
+• Upload lên YouTube (unlisted) hoặc Google Drive, set quyền xem.
+• Đính kèm link video vào trang bìa báo cáo khi nộp.
+Bắt buộc
+Tất cảcác thành viên trong nhóm đều phải tham gia thuyết trình, kểcảtrực tiếp lẫn
+qua video, thì mới được tính điểm. Thành viên không tham gia thuyết trình sẽbịtrừđiểm
+cá nhân hoặc không được tính điểm bài tập lớn.
+5
+Quy định nộp bài
+5.1
+Thành phần nộp
+Mỗi nhóm nộp một file ZIP chứa:
+1. Báo cáo (file PDF).
+2. Mã nguồn (thư mục src/): bao gồm SQL scripts, Python/R code, frontend code, ETL
+scripts (ưu tiên github, có thểaccess được)
+3. Dữliệu mẫu (thư mục data/): github/Google Drive.
+4. Slide thuyết trình (file PDF): slide dùng đểthuyết trình trực tiếp hoặc trong video.
+5. Link video (nếu là nhóm thuyết trình qua video): trang bìa báo cáo.
+5.2
+Cách thức nộp
+• Kênh 1: Nộp qua hệthống e-learning (LMS) của môn học.
+• Deadline: 23:59, ngày 15/11/2026 (Chủnhật, cuối Tuần 12).
+6
+Tài liệu tham khảo
+Sinh viên tham khảo các tài liệu sau (theo đềcương môn học DCMH.CO4031.6.1):
+[1] W. H. Inmon, Building the Data Warehouse, 4th ed. Wiley, 2005.
+[2] R. Kimball, M. Ross, The Data Warehouse Toolkit, 3rd ed. Wiley, 2013.
+[3] E. Turban, J. E. Aronson, T.-P. Liang, Decision Support Systems and Intelligent Systems,
+7th ed. Prentice-Hall, 2005.
+[4] R. Elmasri, S. B. Navathe, Fundamentals of Database Systems, 7th ed. Addison-Wesley,
+2016.
+[5] R. Sharda, D. Delen, E. Turban, Analytics, Data Science, & Artificial Intelligence: Systems
+for Decision Support, 7th ed. Pearson, 2020.
+[6] J. Han, M. Kamber, J. Pei, Data Mining: Concepts and Techniques, 3rd ed. Morgan Kaufmann,
+2012.
+[7] F. Burstein, C. W. Holsapple, Handbook on Decision Support Systems. Springer, 2008.
+Trang 5 / 6
+
+
+=== PAGE 7 ===
+CO4031 - Kho dữliệu & HệhỗtrợQuyết định
+Bài tập lớn - HK261
+[8] Trần Minh Quang et al., Cơ sởdữliệu: khái niệm, phương pháp, và kỹthuật phân tích thiết
+kế. NXB ĐHQG-HCM, 2025.
+Tài liệu này được phát hành kèm theo học kỳ261. Mọi thay đổi sẽđược thông báo qua kênh
+lớp học.
+Trang 6 / 6
+
+
