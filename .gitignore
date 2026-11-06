@@ -1,7 +1,5 @@
 .env
 .venv/
-*.xls
-*.csv
 *.log
 __pycache__/
 *.pyc
