@@ -1,0 +1,111 @@
+﻿rule_id,run_id,antecedents,consequents,antecedent_names,consequent_names,support,confidence,lift
+1,2,"Jiffy Mailers, Set o","Memorex Flash Drive,","Jiffy Mailers, Set of 50","Memorex Flash Drive, USB",0.000120,0.214300,315.5700
+2,2,"Memorex Flash Drive,","Jiffy Mailers, Set o","Memorex Flash Drive, USB","Jiffy Mailers, Set of 50",0.000120,0.176500,315.5700
+3,2,Brother Fax and Copi,SanDisk Message Book,"Brother Fax and Copier, Color","SanDisk Message Books, Recycled",0.000120,0.125000,223.5300
+4,2,SanDisk Message Book,Brother Fax and Copi,"SanDisk Message Books, Recycled","Brother Fax and Copier, Color",0.000120,0.214300,223.5300
+5,2,Kraft Clasp Envelope,"OIC Staples, Assorte","Kraft Clasp Envelope, with clear poly window","OIC Staples, Assorted Sizes",0.000120,0.107100,107.2900
+6,2,"OIC Staples, Assorte",Kraft Clasp Envelope,"OIC Staples, Assorted Sizes","Kraft Clasp Envelope, with clear poly window",0.000120,0.120000,107.2900
+7,2,"Hoover Microwave, Wh","Fellowes Folders, Bl","Hoover Microwave, White","Fellowes Folders, Blue",0.000120,0.166700,106.9900
+8,2,"Tenex Light Bulb, Du",Binney & Smith Highl,"Tenex Light Bulb, Duo Pack","Binney & Smith Highlighters, Water Color",0.000120,0.166700,104.3100
+9,2,Apple Office Telepho,"Sharp Copy Machine, ","Apple Office Telephone, with Caller ID","Sharp Copy Machine, Color",0.000120,0.130400,96.0400
+10,2,"Kleencut Shears, Ste",Jiffy Business Envel,"Kleencut Shears, Steel","Jiffy Business Envelopes, Recycled",0.000120,0.157900,87.8400
+11,2,Hon Olson Stacker Ch,Staples,Hon Olson Stacker Chairs,Staples,0.000120,0.750000,87.7400
+12,2,"BIC Markers, Blue","Advantus Light Bulb,","BIC Markers, Blue","Advantus Light Bulb, Black",0.000120,0.107100,86.5300
+13,2,"Advantus Clamps, Met","Kleencut Box Cutter,","Advantus Clamps, Metal","Kleencut Box Cutter, High Speed",0.000120,0.103400,86.3300
+14,2,"Kleencut Box Cutter,","Advantus Clamps, Met","Kleencut Box Cutter, High Speed","Advantus Clamps, Metal",0.000120,0.100000,86.3300
+15,2,"SanDisk Memory Card,",Enermax Numeric Keyp,"SanDisk Memory Card, Bluetooth","Enermax Numeric Keypad, Bluetooth",0.000120,0.136400,85.3500
+16,2,Harbour Creations St,"Binney & Smith Pens,","Harbour Creations Steel Folding Chair, Set of Two","Binney & Smith Pens, Water Color",0.000120,0.125000,80.2400
+17,2,Office Star Rocking ,"Boston Canvas, Easy-","Office Star Rocking Chair, Adjustable","Boston Canvas, Easy-Erase",0.000120,0.100000,67.6600
+18,2,Smead Shipping Label,Bush Stackable Bookr,"Smead Shipping Labels, Alphabetical","Bush Stackable Bookrack, Pine",0.000120,0.103400,58.8600
+19,2,Hoover Shoulder Vac ,Staples,Hoover Shoulder Vac Commercial Portable Vacuum,Staples,0.000120,0.500000,58.4900
+20,2,Ikea 3-Shelf Cabinet,Hon Executive Leathe,"Ikea 3-Shelf Cabinet, Metal","Hon Executive Leather Armchair, Adjustable",0.000120,0.111100,56.7700
+21,2,"Elite Ruler, Serrate","Rogers File Cart, Si","Elite Ruler, Serrated","Rogers File Cart, Single Width",0.000120,0.187500,53.9500
+22,2,#10 White Business E,Staples,"#10 White Business Envelopes,4 1/8 x 9 1/2",Staples,0.000120,0.428600,50.1400
+23,2,Newell 34,Staples,Newell 34,Staples,0.000120,0.428600,50.1400
+24,2,Satellite Sectional ,Staples,Satellite Sectional Post Binders,Staples,0.000120,0.272700,31.9100
+25,2,Adjustable Depth Let,Staples,Adjustable Depth Letter/Legal Cart,Staples,0.000120,0.272700,31.9100
+26,2,Adams Telephone Mess,Staples,"Adams Telephone Message Book W/Dividers/Space For Phone Numbers, 5 1/4""X8 1/2"", 200/Messages",Staples,0.000120,0.214300,25.0700
+27,2,KI Adjustable-Height,Staples,KI Adjustable-Height Table,Staples,0.000120,0.166700,19.5000
+28,4,"Jiffy Mailers, Set o","Memorex Flash Drive,","Jiffy Mailers, Set of 50","Memorex Flash Drive, USB",0.000120,0.214300,315.5700
+29,4,"Memorex Flash Drive,","Jiffy Mailers, Set o","Memorex Flash Drive, USB","Jiffy Mailers, Set of 50",0.000120,0.176500,315.5700
+30,4,Brother Fax and Copi,SanDisk Message Book,"Brother Fax and Copier, Color","SanDisk Message Books, Recycled",0.000120,0.125000,223.5300
+31,4,SanDisk Message Book,Brother Fax and Copi,"SanDisk Message Books, Recycled","Brother Fax and Copier, Color",0.000120,0.214300,223.5300
+32,4,Kraft Clasp Envelope,"OIC Staples, Assorte","Kraft Clasp Envelope, with clear poly window","OIC Staples, Assorted Sizes",0.000120,0.107100,107.2900
+33,4,"OIC Staples, Assorte",Kraft Clasp Envelope,"OIC Staples, Assorted Sizes","Kraft Clasp Envelope, with clear poly window",0.000120,0.120000,107.2900
+34,4,"Hoover Microwave, Wh","Fellowes Folders, Bl","Hoover Microwave, White","Fellowes Folders, Blue",0.000120,0.166700,106.9900
+35,4,"Tenex Light Bulb, Du",Binney & Smith Highl,"Tenex Light Bulb, Duo Pack","Binney & Smith Highlighters, Water Color",0.000120,0.166700,104.3100
+36,4,Apple Office Telepho,"Sharp Copy Machine, ","Apple Office Telephone, with Caller ID","Sharp Copy Machine, Color",0.000120,0.130400,96.0400
+37,4,"Kleencut Shears, Ste",Jiffy Business Envel,"Kleencut Shears, Steel","Jiffy Business Envelopes, Recycled",0.000120,0.157900,87.8400
+38,4,Hon Olson Stacker Ch,Staples,Hon Olson Stacker Chairs,Staples,0.000120,0.750000,87.7400
+39,4,"BIC Markers, Blue","Advantus Light Bulb,","BIC Markers, Blue","Advantus Light Bulb, Black",0.000120,0.107100,86.5300
+40,4,"Advantus Clamps, Met","Kleencut Box Cutter,","Advantus Clamps, Metal","Kleencut Box Cutter, High Speed",0.000120,0.103400,86.3300
+41,4,"Kleencut Box Cutter,","Advantus Clamps, Met","Kleencut Box Cutter, High Speed","Advantus Clamps, Metal",0.000120,0.100000,86.3300
+42,4,"SanDisk Memory Card,",Enermax Numeric Keyp,"SanDisk Memory Card, Bluetooth","Enermax Numeric Keypad, Bluetooth",0.000120,0.136400,85.3500
+43,4,Harbour Creations St,"Binney & Smith Pens,","Harbour Creations Steel Folding Chair, Set of Two","Binney & Smith Pens, Water Color",0.000120,0.125000,80.2400
+44,4,Office Star Rocking ,"Boston Canvas, Easy-","Office Star Rocking Chair, Adjustable","Boston Canvas, Easy-Erase",0.000120,0.100000,67.6600
+45,4,Smead Shipping Label,Bush Stackable Bookr,"Smead Shipping Labels, Alphabetical","Bush Stackable Bookrack, Pine",0.000120,0.103400,58.8600
+46,4,Hoover Shoulder Vac ,Staples,Hoover Shoulder Vac Commercial Portable Vacuum,Staples,0.000120,0.500000,58.4900
+47,4,Ikea 3-Shelf Cabinet,Hon Executive Leathe,"Ikea 3-Shelf Cabinet, Metal","Hon Executive Leather Armchair, Adjustable",0.000120,0.111100,56.7700
+48,4,"Elite Ruler, Serrate","Rogers File Cart, Si","Elite Ruler, Serrated","Rogers File Cart, Single Width",0.000120,0.187500,53.9500
+49,4,#10 White Business E,Staples,"#10 White Business Envelopes,4 1/8 x 9 1/2",Staples,0.000120,0.428600,50.1400
+50,4,Newell 34,Staples,Newell 34,Staples,0.000120,0.428600,50.1400
+51,4,Satellite Sectional ,Staples,Satellite Sectional Post Binders,Staples,0.000120,0.272700,31.9100
+52,4,Adjustable Depth Let,Staples,Adjustable Depth Letter/Legal Cart,Staples,0.000120,0.272700,31.9100
+53,4,Adams Telephone Mess,Staples,"Adams Telephone Message Book W/Dividers/Space For Phone Numbers, 5 1/4""X8 1/2"", 200/Messages",Staples,0.000120,0.214300,25.0700
+54,4,KI Adjustable-Height,Staples,KI Adjustable-Height Table,Staples,0.000120,0.166700,19.5000
+55,5,Appliances,Paper,Appliances,Paper,0.010106,0.150100,1.1600
+56,6,Copiers,Labels,Copiers,Labels,0.009786,0.115600,1.1700
+57,6,Appliances,Paper,Appliances,Paper,0.010106,0.150100,1.1600
+58,6,Copiers,Bookcases,Copiers,Bookcases,0.008708,0.102800,1.1300
+59,6,Machines,Bookcases,Machines,Bookcases,0.005792,0.102000,1.1200
+60,6,Copiers,Envelopes,Copiers,Envelopes,0.008708,0.102800,1.1100
+61,6,Machines,Labels,Machines,Labels,0.006151,0.108300,1.1000
+62,6,Appliances,Binders,Appliances,Binders,0.015578,0.231300,1.0800
+63,6,Machines,Art,Machines,Art,0.010665,0.187800,1.0800
+64,6,Machines,Phones,Machines,Phones,0.007629,0.134300,1.0700
+65,6,Accessories,Phones,Accessories,Phones,0.015458,0.134000,1.0700
+66,6,Phones,Accessories,Phones,Accessories,0.015458,0.123500,1.0700
+67,6,Supplies,Chairs,Supplies,Chairs,0.012343,0.135500,1.0600
+68,6,Art,Storage,Art,Storage,0.033273,0.190800,1.0500
+69,6,Storage,Art,Storage,Art,0.033273,0.183700,1.0500
+70,7,"Jiffy Mailers, Set o","Memorex Flash Drive,","Jiffy Mailers, Set of 50","Memorex Flash Drive, USB",0.000120,0.214300,315.5700
+71,7,"Memorex Flash Drive,","Jiffy Mailers, Set o","Memorex Flash Drive, USB","Jiffy Mailers, Set of 50",0.000120,0.176500,315.5700
+72,7,Brother Fax and Copi,SanDisk Message Book,"Brother Fax and Copier, Color","SanDisk Message Books, Recycled",0.000120,0.125000,223.5300
+73,7,SanDisk Message Book,Brother Fax and Copi,"SanDisk Message Books, Recycled","Brother Fax and Copier, Color",0.000120,0.214300,223.5300
+74,7,Kraft Clasp Envelope,"OIC Staples, Assorte","Kraft Clasp Envelope, with clear poly window","OIC Staples, Assorted Sizes",0.000120,0.107100,107.2900
+75,7,"OIC Staples, Assorte",Kraft Clasp Envelope,"OIC Staples, Assorted Sizes","Kraft Clasp Envelope, with clear poly window",0.000120,0.120000,107.2900
+76,7,"Hoover Microwave, Wh","Fellowes Folders, Bl","Hoover Microwave, White","Fellowes Folders, Blue",0.000120,0.166700,106.9900
+77,7,"Tenex Light Bulb, Du",Binney & Smith Highl,"Tenex Light Bulb, Duo Pack","Binney & Smith Highlighters, Water Color",0.000120,0.166700,104.3100
+78,7,Apple Office Telepho,"Sharp Copy Machine, ","Apple Office Telephone, with Caller ID","Sharp Copy Machine, Color",0.000120,0.130400,96.0400
+79,7,"Kleencut Shears, Ste",Jiffy Business Envel,"Kleencut Shears, Steel","Jiffy Business Envelopes, Recycled",0.000120,0.157900,87.8400
+80,7,Hon Olson Stacker Ch,Staples,Hon Olson Stacker Chairs,Staples,0.000120,0.750000,87.7400
+81,7,"BIC Markers, Blue","Advantus Light Bulb,","BIC Markers, Blue","Advantus Light Bulb, Black",0.000120,0.107100,86.5300
+82,7,"Advantus Clamps, Met","Kleencut Box Cutter,","Advantus Clamps, Metal","Kleencut Box Cutter, High Speed",0.000120,0.103400,86.3300
+83,7,"Kleencut Box Cutter,","Advantus Clamps, Met","Kleencut Box Cutter, High Speed","Advantus Clamps, Metal",0.000120,0.100000,86.3300
+84,7,"SanDisk Memory Card,",Enermax Numeric Keyp,"SanDisk Memory Card, Bluetooth","Enermax Numeric Keypad, Bluetooth",0.000120,0.136400,85.3500
+85,7,Harbour Creations St,"Binney & Smith Pens,","Harbour Creations Steel Folding Chair, Set of Two","Binney & Smith Pens, Water Color",0.000120,0.125000,80.2400
+86,7,Office Star Rocking ,"Boston Canvas, Easy-","Office Star Rocking Chair, Adjustable","Boston Canvas, Easy-Erase",0.000120,0.100000,67.6600
+87,7,Smead Shipping Label,Bush Stackable Bookr,"Smead Shipping Labels, Alphabetical","Bush Stackable Bookrack, Pine",0.000120,0.103400,58.8600
+88,7,Hoover Shoulder Vac ,Staples,Hoover Shoulder Vac Commercial Portable Vacuum,Staples,0.000120,0.500000,58.4900
+89,7,Ikea 3-Shelf Cabinet,Hon Executive Leathe,"Ikea 3-Shelf Cabinet, Metal","Hon Executive Leather Armchair, Adjustable",0.000120,0.111100,56.7700
+90,7,"Elite Ruler, Serrate","Rogers File Cart, Si","Elite Ruler, Serrated","Rogers File Cart, Single Width",0.000120,0.187500,53.9500
+91,7,#10 White Business E,Staples,"#10 White Business Envelopes,4 1/8 x 9 1/2",Staples,0.000120,0.428600,50.1400
+92,7,Newell 34,Staples,Newell 34,Staples,0.000120,0.428600,50.1400
+93,7,Satellite Sectional ,Staples,Satellite Sectional Post Binders,Staples,0.000120,0.272700,31.9100
+94,7,Adjustable Depth Let,Staples,Adjustable Depth Letter/Legal Cart,Staples,0.000120,0.272700,31.9100
+95,7,Adams Telephone Mess,Staples,"Adams Telephone Message Book W/Dividers/Space For Phone Numbers, 5 1/4""X8 1/2"", 200/Messages",Staples,0.000120,0.214300,25.0700
+96,7,KI Adjustable-Height,Staples,KI Adjustable-Height Table,Staples,0.000120,0.166700,19.5000
+97,8,Copiers,Labels,Copiers,Labels,0.009786,0.115600,1.1700
+98,8,Appliances,Paper,Appliances,Paper,0.010106,0.150100,1.1600
+99,8,Copiers,Bookcases,Copiers,Bookcases,0.008708,0.102800,1.1300
+100,8,Machines,Bookcases,Machines,Bookcases,0.005792,0.102000,1.1200
+101,8,Copiers,Envelopes,Copiers,Envelopes,0.008708,0.102800,1.1100
+102,8,Machines,Labels,Machines,Labels,0.006151,0.108300,1.1000
+103,8,Appliances,Binders,Appliances,Binders,0.015578,0.231300,1.0800
+104,8,Machines,Art,Machines,Art,0.010665,0.187800,1.0800
+105,8,Machines,Phones,Machines,Phones,0.007629,0.134300,1.0700
+106,8,Accessories,Phones,Accessories,Phones,0.015458,0.134000,1.0700
+107,8,Phones,Accessories,Phones,Accessories,0.015458,0.123500,1.0700
+108,8,Supplies,Chairs,Supplies,Chairs,0.012343,0.135500,1.0600
+109,8,Art,Storage,Art,Storage,0.033273,0.190800,1.0500
+110,8,Storage,Art,Storage,Art,0.033273,0.183700,1.0500

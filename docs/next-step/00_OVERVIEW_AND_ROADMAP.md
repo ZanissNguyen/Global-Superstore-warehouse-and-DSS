@@ -43,6 +43,10 @@ Mỗi đầu việc tiếp theo được trình bày chi tiết trong một file
    - Kịch bản chi tiết 20 slides thuyết trình.
    - Phân chia thời lượng thuyết trình 15 phút cho 3 thành viên.
    - Kế hoạch quay video demo nộp bài và checklist đóng gói nộp BKeL.
+5. [TONG_HOP_TOAN_DIEN_HE_THONG_VA_UNG_DUNG.md](file:///e:/bku/261/DW/codebase/Global-Superstore-warehouse-and-DSS/docs/TONG_HOP_TOAN_DIEN_HE_THONG_VA_UNG_DUNG.md):
+   - Bản tổng hợp hoàn thiện toàn diện về năng lực hệ thống, các điểm hay/đột phá kỹ thuật.
+   - 5 kịch bản ứng dụng thực tiễn trong doanh nghiệp (CFO, Sales Manager, Supply Chain, Marketing, Data Engineer).
+   - Cẩm nang xử lý sự cố thực chiến (Power BI, Apriori, PostgreSQL).
 
 ---
 

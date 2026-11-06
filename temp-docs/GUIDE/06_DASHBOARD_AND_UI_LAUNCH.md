@@ -21,17 +21,23 @@ http://localhost:8501
 
 ### 1.3. Hướng dẫn trải nghiệm các tính năng trên giao diện:
 1. **Trang 1: Executive Overview & KPI Dashboard:**
-   - Quan sát các thẻ KPI tổng quát: Tổng doanh thu, Lợi nhuận ròng, Biên lợi nhuận, Tỷ lệ chiết khấu, Tỷ lệ hoàn trả.
-   - Quan sát danh sách cảnh báo "Vùng có doanh số cao nhưng lợi nhuận âm".
+   - Quan sát 5 thẻ KPI tài chính cấp cao (Doanh thu $12.64M, Lợi nhuận $1.47M, Biên LN 11.61%, Chiết khấu BQ 14.29%, Tỷ lệ hoàn trả 2.29%).
+   - **Biểu đồ Doanh thu và Lợi nhuận theo 48 Tháng (Dual-Axis):** Quan sát sự kết hợp nhịp nhàng giữa Doanh thu (cột xanh) và Lợi nhuận (đường xanh lá), hover để xem số lượng đơn hàng thực tế (180 đến hơn 1,000 đơn/tháng).
+   - Trung tâm cảnh báo rủi ro nghiệp vụ: Nhận diện các điểm nóng "thấm lỗ" tại thị trường EMEA/Africa và ngành hàng Tables.
+   - Cơ cấu Doanh thu & Lợi nhuận theo Ngành hàng (Technology, Furniture, Office Supplies).
 2. **Trang 2: What-If Discount & Profit Simulation Sandbox:**
-   - Chọn Thị trường (ví dụ: `APAC`) và Danh mục (ví dụ: `Furniture`).
-   - Kéo thanh trượt điều chỉnh mức chiết khấu tăng thêm từ `0%` đến `+15%`.
-   - Quan sát biểu đồ cột biến thiên tức thời giữa **Hiện trạng (Baseline)** và **Mô phỏng (Simulated)**.
-   - Đọc kết luận khuyến nghị do hệ thống tự động đưa ra ở khung dưới.
+   - Chọn Thị trường mục tiêu (ví dụ: `APAC`) và Ngành hàng (ví dụ: `Furniture`). Hệ thống tự động nạp Doanh thu, Lợi nhuận, Chiết khấu gốc từ CSDL.
+   - Tinh chỉnh mức chiết khấu mong muốn (+/- %) và hệ số co giãn cầu $e$.
+   - Quan sát kết quả mô phỏng tức thời: Doanh thu, Lợi nhuận, Biên lợi nhuận dự kiến và Biểu đồ đối chiếu trực quan.
+   - Đọc kết luận khuyến nghị tự động (ACCEPT / CAUTION / REJECT) có giải thích nguyên nhân kinh tế lượng.
 3. **Trang 3: Sales Forecasting Explorer:**
-   - Xem đồ thị chuỗi thời gian doanh thu qua các năm và đường dự báo 6 tháng tới kèm vùng dải tin cậy 95%.
+   - Xem đồ thị chuỗi thời gian doanh thu 48 tháng lịch sử kết hợp 6 tháng dự báo tương lai (Holt-Winters) kèm dải tin cậy 95%.
+   - Thẻ đánh giá sai số mô hình thực nghiệm: MAE, RMSE, MAPE (< 15%).
 4. **Trang 4: Market Basket & Cross-Selling Navigator:**
-   - Chọn một mã sản phẩm để xem danh sách các sản phẩm nên gợi ý bán kèm với hệ số Lift cao nhất.
+   - Thẻ tóm tắt số lượng luật khai phá, Max Lift, Max Confidence.
+   - Thanh trượt động lọc luật theo hệ số Lift mong muốn.
+   - Bảng phân tích chi tiết: Sản phẩm chọn mua $\rightarrow$ Gợi ý bán kèm, kèm đề xuất hành động combo / voucher.
+   - Khung mở rộng hướng dẫn lệnh CLI khai phá mới cho Sub-Category và SKU level.
 
 ---
 
@@ -70,7 +76,8 @@ Nếu Power BI yêu cầu xác thực kết nối CSDL:
    - **Password:** Mật khẩu trong file `.env`
 4. Bấm **Apply Changes** để Power BI nạp dữ liệu từ các bảng `gold.fact_sales`, `gold.dim_*` và `dss.*`.
 
-### 3.3. Tương tác trên Báo cáo Power BI:
-- **Trang 1: Sales Performance:** Sử dụng thanh trượt Năm/Quý để lọc dữ liệu; nhấp đúp vào một quốc gia trên bản đồ thế giới để xem doanh thu chi tiết.
-- **Trang 2: Product Performance:** Xem biểu đồ Scatter Plot giữa Sales và Profit; lọc theo Category để xem phân tích Pareto 80/20.
-- **Trang 3: Customer Segment & RFM:** Lọc khách hàng theo phân khúc và điểm Recency.
+### 3.3. Tương tác trên Báo cáo Power BI & Lưu ý Trực quan hóa:
+- **Trang 1: Executive Sales Performance:** Sử dụng thanh trượt Năm/Quý để lọc dữ liệu; xem biểu đồ Clustered Column & Line thể hiện Doanh số và Lợi nhuận theo tháng.
+  - *Lưu ý quan trọng:* Tuyệt đối không kéo cột thô `sales` / `profit` vào biểu đồ để tránh bị lỗi `Count = 1`. Luôn sử dụng DAX Measure `[Total Sales] = SUM(fact_sales[sales])` và `[Total Profit] = SUM(fact_sales[profit])` từ file `reports/powerbi/03_DAX_MEASURES.dax`.
+- **Trang 2: Product Performance & Pareto ABC:** Xem biểu đồ Scatter Plot giữa Sales và Profit định vị 17 ngành hàng; biểu đồ Pareto 80/20 chứng minh quy luật 20% mặt hàng mang lại 80% lợi nhuận; bảng cảnh báo Top 10 sản phẩm gây lỗ nhiều nhất.
+- **Trang 3: Customer Segment & Cross-Selling:** Biểu đồ Donut tỷ trọng phân khúc (Consumer, Corporate, Home Office) và Bảng gợi ý bán chéo trích xuất trực tiếp từ bảng `dss.association_rule`.
