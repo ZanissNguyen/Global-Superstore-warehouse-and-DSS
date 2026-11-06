@@ -18,7 +18,8 @@ Thư mục `temp-docs/GUIDE/` cung cấp tài liệu hướng dẫn từng bư�
 | [`04_OLAP_AND_MARTS_GUIDE.md`](./04_OLAP_AND_MARTS_GUIDE.md) | Thực thi bộ truy vấn OLAP chuẩn (Roll-up, Drill-down, Slice, Dice, Pivot, Window Functions, Cube) và khởi tạo các Materialized Views (`mv_*_mart`). |
 | [`05_DSS_PIPELINE_GUIDE.md`](./05_DSS_PIPELINE_GUIDE.md) | Chạy pipeline học máy và hỗ trợ quyết định: Dự báo doanh thu (Forecasting), Mô phỏng What-if (Discount/Profit), Khai phá luật kết hợp giỏ hàng (Apriori). |
 | [`06_DASHBOARD_AND_UI_LAUNCH.md`](./06_DASHBOARD_AND_UI_LAUNCH.md) | Khởi chạy ứng dụng Web DSS tương tác (Streamlit / FastAPI) và kết nối Báo cáo Power BI (.pbix) vào PostgreSQL. |
-| [`07_TROUBLESHOOTING.md`](./07_TROUBLESHOOTING.md) | Danh mục mã lỗi thường gặp (Xung đột cổng Docker, lỗi kết nối DB, lỗi mã hóa file CSV latin1/cp1252, lỗi định dạng ngày tháng) và cách khắc phục dứt điểm. |
+| [`07_TROUBLESHOOTING.md`](./07_TROUBLESHOOTING.md) | Danh mục mã lỗi thường gặp (Xung đột cổng Docker, lỗi kết nối DB, lỗi mã hóa file CSV latin1/cp1252, lỗi định dạng ngày tháng, lỗi biểu đồ Power BI count = 1, lỗi Apriori 0 rules, lỗi SQL DISTINCT) và cách khắc phục dứt điểm. |
+| [**`TỔNG HỢP TOÀN DIỆN HỆ THỐNG & ỨNG DỤNG`**](../../docs/TONG_HOP_TOAN_DIEN_HE_THONG_VA_UNG_DUNG.md) | **Bản tổng hợp hoàn thiện toàn diện về những gì hệ thống làm được, những cái hay/đột phá kỹ thuật, 5 kịch bản ứng dụng thực tiễn trong doanh nghiệp và cẩm nang vận hành.** |
 
 ---
 

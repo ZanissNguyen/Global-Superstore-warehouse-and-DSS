@@ -108,11 +108,14 @@ python -m src.dss.association.run --level sub_category --min-support 0.005 --min
 SELECT 
     antecedent_names AS "San_Pham_Mua_Truoc",
     consequent_names AS "San_Pham_Goi_Y_Mua_Kem",
-    ROUND(support * 100, 2) AS "Support_%",
+    ROUND(support * 100, 3) AS "Support_%",
     ROUND(confidence * 100, 2) AS "Confidence_%",
     ROUND(lift, 2) AS "Lift"
-FROM dss.association_rule
-ORDER BY lift DESC
+FROM (
+    SELECT DISTINCT antecedent_names, consequent_names, support, confidence, lift
+    FROM dss.association_rule
+) sub
+ORDER BY "Lift" DESC
 LIMIT 10;
 ```
-Những luật này sẽ được đưa thẳng lên giao diện Web DSS để gợi ý tạo gói combo khuyến mãi cho nhà quản trị.
+Những luật này sẽ được đưa thẳng lên giao diện Web DSS (Tab 4) để tự động gợi ý tạo gói combo khuyến mãi hoặc kích cầu bán chéo tại giỏ hàng cho nhà quản trị.
