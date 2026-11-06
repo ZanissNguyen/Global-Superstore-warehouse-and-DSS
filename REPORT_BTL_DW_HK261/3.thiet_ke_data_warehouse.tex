@@ -1,0 +1,271 @@
+\section{Thiết kế và xây dựng Data Warehouse}
+
+\subsection{Kiến trúc tổng thể}
+
+Hệ thống Kho dữ liệu Global Superstore được thiết kế theo kiến trúc hồ dữ liệu đa tầng Medallion (Bronze -- Silver -- Gold) kết hợp cùng tầng phân tích hỗ trợ quyết định (\texttt{dss}), được triển khai đồng bộ trên hệ quản trị cơ sở dữ liệu quan hệ PostgreSQL 17 đóng gói trong môi trường ảo hóa Docker (\texttt{docker-compose.yml}). Thay vì nạp trực tiếp dữ liệu từ tệp văn bản phẳng vào các bảng báo cáo, kiến trúc phân tầng chia nhỏ vòng đời dữ liệu thành bốn lược đồ (schemas) độc lập về mặt logic trong cùng một cơ sở dữ liệu \texttt{global\_superstore}, giúp cô lập lỗi, bảo toàn lịch sử dữ liệu gốc và tối ưu hóa cho từng mục đích truy cập khác nhau. Sơ đồ luồng dữ liệu tổng thể của hệ thống được minh họa trong Hình \ref{fig:dw_architecture}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 0.9cm,
+    box/.style={rectangle, draw=black, thick, rounded corners=3pt, minimum width=2.7cm, minimum height=1.3cm, align=center, font=\footnotesize, fill=gray!10},
+    arrow/.style={-{Stealth[scale=1.0]}, thick}
+]
+    \node[box, fill=blue!8] (src) {\textbf{Nguồn dữ liệu}\\CSV (51.290 dòng)\\Batch Q1/2015};
+    \node[box, fill=orange!12, right=of src] (bronze) {\textbf{Tầng Bronze}\\\texttt{raw\_orders}\\\texttt{ingestion} (SHA-256)};
+    \node[box, fill=gray!20, right=of bronze] (silver) {\textbf{Tầng Silver}\\\texttt{silver.orders}\\(Làm sạch \& Chuẩn hóa)};
+    \node[box, fill=yellow!18, right=of silver] (gold) {\textbf{Tầng Gold}\\Star Schema (1 Fact, 5 Dims)\\3 Materialized Views};
+    \node[box, fill=green!12, below=0.7cm of gold] (dss) {\textbf{Tầng DSS \& BI}\\Schema \texttt{dss}, OLAP,\\Streamlit, Power BI};
+
+    \draw[arrow] (src) -- (bronze);
+    \draw[arrow] (bronze) -- (silver);
+    \draw[arrow] (silver) -- (gold);
+    \draw[arrow] (gold) -- (dss);
+\end{tikzpicture}
+\caption{Kiến trúc phân tầng Medallion của hệ thống Kho dữ liệu và DSS Global Superstore (Gợi ý: Có thể thay thế bằng sơ đồ kiến trúc chi tiết vẽ trên Draw.io nếu cần trình bày đồ họa)}
+\label{fig:dw_architecture}
+\end{figure}
+
+Trong kiến trúc này, tầng \texttt{bronze} đóng vai trò là vùng tiếp nhận thô (Landing/Staging Zone), lưu trữ nguyên trạng toàn bộ các dòng bản ghi đọc từ tệp CSV dưới kiểu dữ liệu chuỗi ký tự (\texttt{TEXT}) kèm theo bảng kiểm toán lịch sử nạp \texttt{bronze.ingestion}. Tầng \texttt{silver} đóng vai trò là vùng dữ liệu đã làm sạch và chuẩn hóa (Conformed \& Cleansed Zone), nơi dữ liệu được ép kiểu chặt chẽ, chuẩn hóa định dạng ngày tháng theo chuẩn ISO, xử lý giá trị khuyết thiếu và kiểm tra các ràng buộc miền giá trị nghiệp vụ tại bảng \texttt{silver.orders}. Tầng \texttt{gold} là tầng trình diễn đa chiều (Dimensional Presentation Zone), tổ chức dữ liệu theo mô hình hình sao (Star Schema) phục vụ trực tiếp cho các truy vấn OLAP và hệ thống ba bảng tổng hợp vật lý (\texttt{mv\_sales\_mart}, \texttt{mv\_product\_mart}, \texttt{mv\_customer\_mart}). Cuối cùng, lược đồ \texttt{dss} lưu trữ bền vững siêu dữ liệu huấn luyện và kết quả đầu ra của các mô hình dự báo chuỗi thời gian cũng như khai phá luật kết hợp giỏ hàng, cung cấp dữ liệu cho dịch vụ Backend FastAPI, giao diện Streamlit và báo cáo Power BI Desktop.
+
+\subsection{Thiết kế mô hình dữ liệu (Star Schema)}
+
+Mô hình dữ liệu đa chiều tại tầng \texttt{gold} được thiết kế tuân thủ quy trình bốn bước của Ralph Kimball \cite{kimball2013}. Ở bước thứ nhất, quy trình nghiệp vụ được lựa chọn là hoạt động bán hàng và giao nhận đơn hàng thương mại điện tử. Ở bước thứ hai, độ mịn (Grain) của bảng sự kiện được tuyên bố ở cấp độ nguyên tử nhất: mỗi bản ghi trong bảng sự kiện đại diện cho đúng một dòng mặt hàng thuộc một đơn đặt hàng (\texttt{row\_id}). Việc giữ nguyên độ mịn ở cấp độ dòng đơn hàng thay vì gộp sớm theo tháng hay theo đơn hàng cho phép hệ thống hỗ trợ mọi truy vấn khoan sâu tới từng mã sản phẩm SKU hoặc phân tích các mặt hàng đồng xuất hiện trong cùng một mã đơn hàng (\texttt{order\_id}). Ở bước thứ ba và thứ tư, nhóm xác định năm bảng chiều (Dimensions) bao quanh một bảng sự kiện trung tâm (\texttt{gold.fact\_sales}), được minh họa trong Hình \ref{fig:star_schema} và mô tả chi tiết trong Bảng \ref{tab:star_schema_tables}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    fact/.style={rectangle, draw=black, very thick, fill=yellow!15, minimum width=4.4cm, minimum height=2.6cm, align=left, font=\scriptsize},
+    dim/.style={rectangle, draw=black, thick, fill=blue!8, minimum width=3.8cm, minimum height=1.8cm, align=left, font=\scriptsize},
+    rel/.style={-{Stealth[scale=0.9]}, thick}
+]
+    \node[fact] (fact) at (0,0) {
+        \textbf{\texttt{gold.fact\_sales} (51.290 rows)}\\
+        \hline
+        \texttt{PK sales\_key (BIGSERIAL)}\\
+        \texttt{FK order\_date\_key, ship\_date\_key}\\
+        \texttt{FK customer\_key, product\_key}\\
+        \texttt{FK geography\_key, ship\_mode\_key}\\
+        \texttt{DD order\_id, row\_id, order\_priority}\\
+        \texttt{M: sales, quantity, discount,}\\
+        \texttt{   profit, shipping\_cost, shipping\_days}
+    };
+
+    \node[dim] (date) at (0, 3.1) {
+        \textbf{\texttt{gold.dim\_date} (2.922 rows)}\\
+        \hline
+        \texttt{PK date\_key (YYYYMMDD)}\\
+        \texttt{full\_date, year, quarter,}\\
+        \texttt{month, week\_of\_year, is\_weekend}
+    };
+
+    \node[dim] (cust) at (-5.3, 1.3) {
+        \textbf{\texttt{gold.dim\_customer} (1.590 rows)}\\
+        \hline
+        \texttt{PK customer\_key (SERIAL)}\\
+        \texttt{NK customer\_id (UNIQUE)}\\
+        \texttt{customer\_name, segment}
+    };
+
+    \node[dim] (prod) at (5.3, 1.3) {
+        \textbf{\texttt{gold.dim\_product} (10.292 rows)}\\
+        \hline
+        \texttt{PK product\_key (SERIAL)}\\
+        \texttt{NK product\_id (UNIQUE)}\\
+        \texttt{product\_name, category, sub\_category}
+    };
+
+    \node[dim] (geo) at (-5.3, -1.6) {
+        \textbf{\texttt{gold.dim\_geography} (3.847 rows)}\\
+        \hline
+        \texttt{PK geography\_key (SERIAL)}\\
+        \texttt{country, state, city, postal\_code}\\
+        \texttt{market, region, regional\_manager}
+    };
+
+    \node[dim] (ship) at (5.3, -1.6) {
+        \textbf{\texttt{gold.dim\_ship\_mode} (4 rows)}\\
+        \hline
+        \texttt{PK ship\_mode\_key (SERIAL)}\\
+        \texttt{NK ship\_mode\_name (UNIQUE)}
+    };
+
+    \draw[rel] (date.south) -- node[right, font=\tiny] {1:N (Order/Ship)} (fact.north);
+    \draw[rel] (cust.east) -- node[above, font=\tiny] {1:N} (fact.north west);
+    \draw[rel] (prod.west) -- node[above, font=\tiny] {1:N} (fact.north east);
+    \draw[rel] (geo.east) -- node[below, font=\tiny] {1:N} (fact.south west);
+    \draw[rel] (ship.west) -- node[below, font=\tiny] {1:N} (fact.south east);
+\end{tikzpicture}
+\caption{Lược đồ hình sao (Star Schema) tại tầng Gold của Kho dữ liệu Global Superstore}
+\label{fig:star_schema}
+\end{figure}
+
+Một điểm thiết kế quan trọng trong mô hình là việc sử dụng toàn bộ khóa thay thế kiểu số nguyên tự tăng (\texttt{SERIAL} / \texttt{BIGSERIAL}) làm khóa chính cho các bảng chiều và khóa ngoại trong bảng sự kiện thay vì sử dụng khóa tự nhiên dạng chuỗi ký tự từ hệ thống nguồn. Cụ thể, việc liên kết qua các cột số nguyên 4 byte như \texttt{customer\_key}, \texttt{product\_key}, \texttt{geography\_key} và \texttt{date\_key} giúp giảm đáng kể kích thước lưu trữ của bảng sự kiện \texttt{gold.fact\_sales} và tăng tốc độ thực thi các phép kết nối (\texttt{JOIN}) có đánh chỉ mục B-Tree trên PostgreSQL. Bên cạnh đó, bảng \texttt{gold.dim\_date} được thiết kế theo mẫu Chiều đóng nhiều vai trò (Role-Playing Dimension): chỉ với một bảng lịch duy nhất chứa 2.922 ngày liên tục từ năm 2011 đến năm 2018 (mã hóa khóa chính theo định dạng số nguyên thông minh \texttt{YYYYMMDD}, ví dụ \texttt{20110115}), bảng sự kiện \texttt{fact\_sales} tham chiếu đồng thời qua hai khóa ngoại là \texttt{order\_date\_key} và \texttt{ship\_date\_key}, cho phép phân tích song song theo cả thời điểm đặt hàng lẫn thời điểm giao hàng.
+
+\begin{table}[H]
+\centering
+\caption{Đặc tả chi tiết các bảng trong mô hình Star Schema tại lược đồ \texttt{gold}}
+\label{tab:star_schema_tables}
+\footnotesize
+\renewcommand{\arraystretch}{1.22}
+\begin{tabularx}{\textwidth}{|l|l|r|X|}
+\hline
+\textbf{Tên bảng} & \textbf{Vai trò} & \textbf{Số bản ghi} & \textbf{Khóa chính (PK), Khóa tự nhiên (NK) và Các thuộc tính chính} \\
+\hline
+\texttt{gold.fact\_sales} & Fact Table & 51.290 & \textbf{PK:} \texttt{sales\_key}; \textbf{FK:} \texttt{order\_date\_key}, \texttt{ship\_date\_key}, \texttt{customer\_key}, \texttt{product\_key}, \texttt{geography\_key}, \texttt{ship\_mode\_key}; \textbf{DD:} \texttt{order\_id}, \texttt{row\_id}, \texttt{order\_priority}, \texttt{is\_returned}; \textbf{Measures:} \texttt{sales}, \texttt{quantity}, \texttt{discount}, \texttt{profit}, \texttt{shipping\_cost}, \texttt{shipping\_days}. \\
+\hline
+\texttt{gold.dim\_date} & Role-Playing Dim & 2.922 & \textbf{PK:} \texttt{date\_key} (\texttt{INTEGER YYYYMMDD}); \textbf{Thuộc tính:} \texttt{full\_date}, \texttt{day\_of\_week}, \texttt{day\_name}, \texttt{day\_of\_month}, \texttt{day\_of\_year}, \texttt{week\_of\_year}, \texttt{month}, \texttt{month\_name}, \texttt{quarter}, \texttt{year}, \texttt{year\_month}, \texttt{is\_weekend}. \\
+\hline
+\texttt{gold.dim\_customer} & Dimension (SCD1) & 1.590 & \textbf{PK:} \texttt{customer\_key} (\texttt{SERIAL}); \textbf{NK:} \texttt{customer\_id} (\texttt{UNIQUE}); \textbf{Thuộc tính:} \texttt{customer\_name}, \texttt{segment} (Consumer, Corporate, Home Office), \texttt{created\_at}. \\
+\hline
+\texttt{gold.dim\_product} & Dimension (SCD1) & 10.292 & \textbf{PK:} \texttt{product\_key} (\texttt{SERIAL}); \textbf{NK:} \texttt{product\_id} (\texttt{UNIQUE}); \textbf{Thuộc tính:} \texttt{product\_name}, \texttt{category} (3 ngành hàng), \texttt{sub\_category} (17 tiểu ngành hàng), \texttt{created\_at}. \\
+\hline
+\texttt{gold.dim\_geography} & Dimension (SCD1) & 3.847 & \textbf{PK:} \texttt{geography\_key} (\texttt{SERIAL}); \textbf{NK tổ hợp:} \texttt{(country, state, city, postal\_code, market, region)}; \textbf{Thuộc tính:} \texttt{regional\_manager}, \texttt{created\_at}. \\
+\hline
+\texttt{gold.dim\_ship\_mode} & Dimension & 4 & \textbf{PK:} \texttt{ship\_mode\_key} (\texttt{SERIAL}); \textbf{NK:} \texttt{ship\_mode\_name} (Standard Class, Second Class, First Class, Same Day). \\
+\hline
+\end{tabularx}
+\end{table}
+
+Các thuộc tính cấp độ giao dịch không có thuộc tính mô tả đi kèm như mã đơn hàng (\texttt{order\_id}), mã dòng (\texttt{row\_id}), độ ưu tiên (\texttt{order\_priority}) và cờ hoàn trả (\texttt{is\_returned}) được lưu trữ trực tiếp trong bảng sự kiện dưới dạng Chiều suy biến (Degenerate Dimensions). Cách thiết kế này giúp tránh việc phải tạo thêm các bảng chiều phụ có kích thước lớn tương đương bảng sự kiện mà vẫn phục vụ hiệu quả việc gom nhóm giỏ hàng theo \texttt{order\_id}. Ngoài năm độ đo tài chính gốc, bảng sự kiện còn lưu trữ độ đo dẫn xuất \texttt{shipping\_days} được tính bằng hiệu số ngày giao hàng và ngày đặt hàng (\texttt{ship\_date - order\_date}) để phục vụ phân tích hiệu suất chuỗi cung ứng.
+
+\subsection{Quy trình ETL}
+
+Toàn bộ quy trình ETL được điều phối tự động thông qua luồng chạy tổng thể \texttt{src/pipeline/flows/bronze\_to\_gold.py}, kết nối tuần tự ba giai đoạn xử lý từ tệp nguồn CSV đến các bảng chiều và bảng sự kiện tầng Gold.
+
+\subsubsection{Bronze Layer}
+
+Quy trình tại tầng Bronze được cài đặt trong mô-đun \texttt{src/etl/bronze/data\_to\_bronze.py}, kết hợp cùng hai mô-đun con là \texttt{extract.py} và \texttt{load.py}. Khi nhận đường dẫn tệp dữ liệu đầu vào, hàm \texttt{read\_raw\_data()} tiến hành đọc tệp CSV (tự động xử lý bảng mã ký tự) và gọi hàm \texttt{create\_content\_hash()} để tính giá trị băm mật mã SHA-256 độ dài 64 ký tự thập lục phân đại diện cho toàn bộ nội dung tệp (ví dụ đối với tệp gốc 51.290 dòng, mã băm thu được là \texttt{3eab4d2ae1aa2a6d...}). Ngay sau đó, hàm \texttt{is\_file\_extracted()} thực thi truy vấn \texttt{bronze/validation/check\_duplicates.sql} để kiểm tra xem mã băm \texttt{content\_hash} này đã tồn tại trong bảng kiểm toán \texttt{bronze.ingestion} hay chưa. Nếu mã băm đã tồn tại, hệ thống lập tức dừng bước nạp thô và xuất thông báo bỏ qua, đảm bảo tính lũy đẳng tuyệt đối ở cấp độ tệp tin.
+
+Trong trường hợp tệp tin mới chưa từng được nạp, hàm \texttt{valid\_data()} kiểm tra sự hiện diện của toàn bộ 20 cột bắt buộc và bổ sung giá trị \texttt{None} cho các cột tùy chọn nếu bị khuyết. Tiếp theo, hệ thống trích xuất danh sách 149 cặp quốc gia -- thị trường duy nhất lưu vào bảng \texttt{bronze.market} và 632 tổ hợp mã bưu chính hợp lệ lưu vào bảng \texttt{bronze.postal\_code} với cơ chế \texttt{ON CONFLICT DO NOTHING}. Một bản ghi kiểm toán mới được chèn vào bảng \texttt{bronze.ingestion} lưu trữ tên tệp, mã băm SHA-256, thời gian nạp và đối tượng siêu dữ liệu kiểu \texttt{JSONB} (\texttt{\{"rows": 51290, "pin\_count": 632, "market\_count": 149\}}), trả về khóa tự tăng \texttt{ingestion\_id}. Cuối cùng, toàn bộ 51.290 bản ghi giao dịch được nạp theo lô (\texttt{chunk\_size = 100}) vào bảng \texttt{bronze.raw\_orders} kèm theo khóa ngoại \texttt{ingestion} và cột cờ trạng thái \texttt{transform} mang giá trị mặc định là \texttt{FALSE}.
+
+\subsubsection{Silver Layer}
+
+Giai đoạn biến đổi sang tầng Silver được điều khiển bởi mô-đun \texttt{src/etl/silver/transform.py} thông qua việc thực thi kịch bản SQL \texttt{src/sql/silver/transform/transform\_orders.sql}. Thay vì quét lại toàn bộ bảng thô, câu lệnh chỉ lọc các bản ghi mới có cờ \texttt{WHERE r.transform = FALSE} từ bảng \texttt{bronze.raw\_orders}. Tại đây, bốn phép biến đổi làm sạch cốt lõi được thực hiện đồng thời trong một giao dịch cơ sở dữ liệu (Transaction):
+
+Thứ nhất, hệ thống cắt bỏ khoảng trắng thừa ở hai đầu chuỗi bằng hàm \texttt{TRIM()} trên tất cả các cột văn bản. Thứ hai, để giải quyết triệt để sự hỗn loạn định dạng ngày tháng tại cột \texttt{Order Date} và \texttt{Ship Date}, câu lệnh sử dụng cấu trúc phân nhánh \texttt{CASE WHEN} kết hợp toán tử khớp biểu thức chính quy (\texttt{\~}) của PostgreSQL nhằm nhận diện chính xác từng mẫu định dạng trước khi gọi hàm \texttt{TO\_DATE()}, như thể hiện trong đoạn mã SQL dưới đây:
+
+\begin{lstlisting}[language=SQL, caption={Xu ly da dinh dang ngay thang va lam sach du lieu tai tang Silver}]
+SELECT 
+    CAST(TRIM(r."Row ID") AS INTEGER) AS row_id,
+    TRIM(r."Order ID") AS order_id,
+    CASE 
+        WHEN r."Order Date" ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(r."Order Date", 'DD/MM/YYYY')
+        WHEN r."Order Date" ~ '^\d{1,2}-\d{1,2}-\d{4}$' THEN TO_DATE(r."Order Date", 'DD-MM-YYYY')
+        WHEN r."Order Date" ~ '^\d{4}-\d{1,2}-\d{1,2}$' THEN TO_DATE(r."Order Date", 'YYYY-MM-DD')
+        ELSE TO_DATE(r."Order Date", 'DD/MM/YYYY')
+    END AS order_date,
+    COALESCE(NULLIF(TRIM(r."Postal Code"), ''), 'Unknown') AS postal_code,
+    CAST(TRIM(r."Sales") AS NUMERIC(12, 4)) AS sales,
+    CAST(TRIM(r."Quantity") AS INTEGER) AS quantity,
+    CAST(TRIM(r."Discount") AS NUMERIC(5, 4)) AS discount,
+    CAST(TRIM(r."Profit") AS NUMERIC(12, 4)) AS profit
+FROM bronze.raw_orders r
+WHERE r.transform = FALSE
+ON CONFLICT (row_id) DO NOTHING;
+\end{lstlisting}
+
+Thứ ba, các giá trị rỗng hoặc chuỗi trống tại cột \texttt{Postal Code} được chuẩn hóa đồng nhất về chuỗi \texttt{'Unknown'} thông qua tổ hợp hàm \texttt{COALESCE(NULLIF(TRIM(...), ''), 'Unknown')}; tương tự, cột \texttt{Order Priority} nếu bị rỗng sẽ được gán mặc định là \texttt{'Medium'}. Thứ tư, các trường định lượng được ép kiểu tường minh sang \texttt{NUMERIC(12,4)} đối với doanh thu, lợi nhuận, chi phí vận chuyển và \texttt{NUMERIC(5,4)} đối với chiết khấu. Bảng đích \texttt{silver.orders} được bảo vệ bởi bốn ràng buộc toàn vẹn miền giá trị gồm \texttt{chk\_silver\_sales CHECK (sales >= 0)}, \texttt{chk\_silver\_quantity CHECK (quantity > 0)}, \texttt{chk\_silver\_discount CHECK (discount >= 0 AND discount <= 1.0)} và \texttt{chk\_silver\_dates CHECK (ship\_date >= order\_date)}. Ngay sau khi lệnh \texttt{INSERT ... ON CONFLICT (row\_id) DO NOTHING} hoàn tất, câu lệnh \texttt{UPDATE bronze.raw\_orders SET transform = TRUE WHERE transform = FALSE} được thực thi để đánh dấu các bản ghi đã được xử lý xong.
+
+\subsubsection{Gold Layer}
+
+Quá trình nạp dữ liệu vào mô hình hình sao tầng Gold được chia thành hai bước tuần tự: nạp các bảng chiều (\texttt{src/etl/gold/load\_dimensions.py}) và nạp bảng sự kiện (\texttt{src/etl/gold/load\_facts.py}). Ở bước nạp chiều, bảng lịch \texttt{gold.dim\_date} được khởi tạo tự động bằng hàm sinh chuỗi thời gian \texttt{generate\_series('2011-01-01'::DATE, '2018-12-31'::DATE, '1 day'::INTERVAL)} của PostgreSQL, trích xuất đầy đủ các thuộc tính thứ, ngày, tuần ISO, tháng, quý, năm và cờ cuối tuần cho 2.922 ngày liên tiếp. Đối với bảng \texttt{gold.dim\_customer} và \texttt{gold.dim\_product}, hệ thống áp dụng chiến lược Chiều biến đổi chậm loại 1 (SCD Type 1) thông qua cú pháp \texttt{SELECT DISTINCT ON (customer\_id) ... ORDER BY customer\_id, order\_date DESC} kết hợp mệnh đề \texttt{ON CONFLICT DO UPDATE}. Kỹ thuật này đảm bảo nếu một mã khách hàng hoặc mã sản phẩm xuất hiện nhiều lần với tên gọi hoặc phân khúc cập nhật theo thời gian, hệ thống sẽ luôn lấy bản ghi có ngày đặt hàng mới nhất để cập nhật mà không gây lỗi trùng khóa trong cùng một lô nạp.
+
+Đối với bảng chiều địa lý \texttt{gold.dim\_geography}, để khắc phục hiện tượng một số thành phố thuộc nhiều vùng thị trường khác nhau, nhóm thiết lập ràng buộc duy nhất gồm sáu thuộc tính \texttt{UNIQUE (country, state, city, postal\_code, market, region)} và trích xuất ra 3.847 vị trí địa lý phân biệt. Ở bước nạp bảng sự kiện (\texttt{src/sql/gold/facts/load\_fact\_sales.sql}), hệ thống thực hiện kết nối (\texttt{JOIN}) bảng \texttt{silver.orders} với các bảng chiều để tra cứu toàn bộ các khóa thay thế (\texttt{customer\_key}, \texttt{product\_key}, \texttt{geography\_key}, \texttt{ship\_mode\_key}), chuyển đổi ngày đặt hàng và ngày giao hàng thành khóa số nguyên \texttt{YYYYMMDD} bằng biểu thức \texttt{CAST(TO\_CHAR(s.order\_date, 'YYYYMMDD') AS INTEGER)}, tính toán số ngày giao hàng \texttt{shipping\_days} và nạp vào \texttt{gold.fact\_sales} với mệnh đề \texttt{ON CONFLICT (row\_id) DO NOTHING}.
+
+\subsubsection{Cơ chế nạp gia tăng (Incremental Loading) và bắt thay đổi dữ liệu}
+
+Để chứng minh khả năng vận hành trong môi trường sản xuất thực tế khi có các đơn hàng mới phát sinh định kỳ mà không cần xóa hay nạp lại toàn bộ kho dữ liệu lịch sử, nhóm đã xây dựng mô-đun tạo lô dữ liệu mới (\texttt{src/etl/incremental/generate\_batch.py}) và kịch bản kiểm thử nạp gia tăng tự động (\texttt{src/etl/incremental/demo\_incremental.py}). Cơ chế bắt thay đổi dữ liệu (Change Data Capture -- CDC) của hệ thống dựa trên sự kết hợp giữa bảng kiểm toán \texttt{bronze.ingestion}, cột cờ đánh dấu \texttt{transform} tại bảng \texttt{bronze.raw\_orders} và cơ chế Upsert lũy đẳng tại tầng Silver và Gold.
+
+Khi kích hoạt lệnh \texttt{python -m src.etl.incremental.demo\_incremental}, hệ thống đưa tệp dữ liệu mới \texttt{dataset/incremental\_orders\_2015\_q1.csv} gồm 500 dòng giao dịch phát sinh trong Quý 1/2015 (có \texttt{Row ID} từ 60001 đến 60500) vào đường ống. Tầng Bronze nhận diện mã băm SHA-256 mới (\texttt{975dd415be1161ee...}), ghi nhận đợt nạp thứ hai vào \texttt{bronze.ingestion} và chỉ chèn thêm 500 dòng mới vào \texttt{bronze.raw\_orders} với cờ \texttt{transform = FALSE} (trong khi 51.290 dòng cũ vẫn giữ nguyên \texttt{transform = TRUE}). Khi tầng Silver thực thi, mệnh đề \texttt{WHERE r.transform = FALSE} giúp hệ thống chỉ quét và biến đổi đúng 500 bản ghi mới này để chèn vào \texttt{silver.orders}. Tiếp đó, tầng Gold tự động cập nhật các bảng chiều, nạp bổ sung 500 dòng mới vào \texttt{gold.fact\_sales} và phát lệnh \texttt{REFRESH MATERIALIZED VIEW} để làm mới toàn bộ các Data Marts. Kết quả đối chứng thực nghiệm trước và sau khi nạp gia tăng được trình bày trong Bảng \ref{tab:incremental_results}. Ngoài ra, kịch bản còn cung cấp tham số \texttt{--reset} cho phép thu hồi chính xác lô dữ liệu thử nghiệm (\texttt{row\_id >= 60000}) và khôi phục kho dữ liệu về trạng thái chuẩn 51.290 dòng ban đầu.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả thực nghiệm quy trình nạp gia tăng (Incremental Loading) với lô dữ liệu Quý 1/2015}
+\label{tab:incremental_results}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|X|r|r|r|}
+\hline
+\textbf{Chỉ số giám sát kho dữ liệu} & \textbf{Trước nạp (Baseline)} & \textbf{Sau nạp gia tăng} & \textbf{Biến thiên (Delta)} \\
+\hline
+Số đợt nạp trong \texttt{bronze.ingestion} & 1 đợt & 2 đợt & $+1$ đợt \\
+\hline
+Tổng số bản ghi trong \texttt{bronze.raw\_orders} & 51.290 dòng & 51.790 dòng & $+500$ dòng \\
+\hline
+Tổng số bản ghi trong \texttt{silver.orders} & 51.290 dòng & 51.790 dòng & $+500$ dòng \\
+\hline
+Tổng số bản ghi trong \texttt{gold.fact\_sales} & 51.290 dòng & 51.790 dòng & $+500$ dòng \\
+\hline
+Tổng doanh thu lũy kế (USD) & 12.642.501,91 & 13.256.279,10 & $+613.777,19$ \\
+\hline
+Tổng lợi nhuận ròng lũy kế (USD) & 1.467.457,29 & 1.606.297,96 & $+138.840,67$ \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{OLAP và các Data Mart / Materialized Views}
+
+Trên nền tảng mô hình hình sao tầng Gold, nhóm đã xây dựng bộ 7 kịch bản truy vấn phân tích đa chiều OLAP chuẩn mực đặt tại thư mục \texttt{src/sql/gold/marts/} và được thực thi tự động qua trình chạy \texttt{run\_olap\_suite.py}. Mỗi truy vấn giải quyết một góc nhìn quản trị cụ thể và khai thác tối đa các toán tử tập hợp nâng cao của SQL trên PostgreSQL 17 \cite{postgresql17}, với kết quả thực nghiệm tổng hợp trong Bảng \ref{tab:olap_suite}:
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp kết quả thực thi bộ 7 phép toán phân tích đa chiều OLAP trên tầng Gold}
+\label{tab:olap_suite}
+\footnotesize
+\renewcommand{\arraystretch}{1.22}
+\begin{tabularx}{\textwidth}{|l|l|r|r|X|}
+\hline
+\textbf{Phép toán OLAP} & \textbf{Tệp kịch bản SQL} & \textbf{Số dòng trả về} & \textbf{Thời gian} & \textbf{Kỹ thuật SQL \& Phát hiện nghiệp vụ chính} \\
+\hline
+1. Roll-up & \texttt{olap\_rollup.sql} & 1.829 & 49,2 ms & Dùng \texttt{GROUP BY ROLLUP (year, quarter, market, country)} tổng hợp phân cấp từ quốc gia lên tổng toàn cục (12,64 triệu USD). \\
+\hline
+2. Drill-down & \texttt{olap\_drilldown.sql} & 20 & 32,8 ms & Khoan sâu ngành \texttt{Technology} tới từng mã SKU; phát hiện máy in 3D \texttt{Cubify CubeX} lỗ nặng nhất ($-8.879,97$ USD do chiết khấu 53,33\%). \\
+\hline
+3. Slice \& Dice & \texttt{olap\_slice\_dice.sql} & 36 \& 8 & 28,5 ms & Cắt lát thị trường \texttt{APAC} năm 2014 và trích xuất khối con \texttt{(APAC, EU)} $\times$ \texttt{(Furniture, Technology)} trong Quý 3, Quý 4. \\
+\hline
+4. Pivot & \texttt{olap\_pivot.sql} & 17 & 19,4 ms & Xoay trục 4 Quý (\texttt{Q1--Q4}) thành 4 cột ngang bằng \texttt{SUM(CASE WHEN quarter = k...)} cho 17 tiểu ngành hàng trong năm 2014. \\
+\hline
+5. MoM Growth & \texttt{olap\_growth\_mom.sql} & 48 & 16,1 ms & Dùng hàm cửa sổ \texttt{LAG(current\_sales, 1) OVER (ORDER BY year, month)} tính tốc độ tăng trưởng doanh thu liên tiếp 48 tháng. \\
+\hline
+6. Top Ranking & \texttt{olap\_top\_products.sql} & 15 & 24,7 ms & Dùng \texttt{DENSE\_RANK() OVER (PARTITION BY category ORDER BY SUM(sales) DESC)} trích xuất Top 5 sản phẩm đầu bảng mỗi ngành. \\
+\hline
+7. CUBE & \texttt{olap\_cube.sql} & 78 & 21,3 ms & Dùng \texttt{GROUP BY CUBE (year, category, market)} sinh đồng thời $2^3 = 8$ cấp độ tổng hợp đa chiều chỉ trong một lần quét bảng. \\
+\hline
+\end{tabularx}
+\end{table}
+
+Để tăng tốc hơn nữa cho các bảng điều khiển BI thường xuyên truy vấn lặp lại các chỉ số tổng hợp, nhóm đã thiết kế và khởi tạo 3 Bảng tổng hợp vật lý (Materialized Views) trong kịch bản \texttt{src/sql/gold/marts/create\_materialized\_views.sql}. Bảng thứ nhất là \texttt{gold.mv\_sales\_mart} (lưu trữ 7.424 dòng tổng hợp trước theo Năm, Quý, Tháng, Thị trường, Vùng, Quốc gia và Phân khúc khách hàng, được đánh chỉ mục trên thời gian và địa lý). Bảng thứ hai là \texttt{gold.mv\_product\_mart} (lưu trữ 29.363 dòng tổng hợp hiệu suất bán hàng, lợi nhuận và biên lợi nhuận của từng sản phẩm theo từng thị trường và năm). Bảng thứ ba là \texttt{gold.mv\_customer\_mart} (lưu trữ đúng 1.590 dòng tương ứng với 1.590 khách hàng, tính toán sẵn ba chỉ số phân tích hành vi RFM gồm \texttt{recency\_days} tính tới mốc tham chiếu \texttt{2015-01-01}, tần suất đặt hàng \texttt{frequency}, tổng chi tiêu \texttt{monetary} và giá trị đơn trung bình \texttt{avg\_order\_value}). Nhờ việc lưu trữ vật lý kết quả tính toán sẵn trên đĩa cứng kèm chỉ mục B-Tree, các truy vấn từ giao diện đồ họa vào ba Data Mart này đạt thời gian phản hồi dưới 5 ms.
+
+\subsection{Kiểm thử và kiểm tra tính đúng đắn của dữ liệu}
+
+Nhằm đảm bảo dữ liệu sau khi trải qua các bước biến đổi không bị thất thoát, biến dạng hay vi phạm toàn vẹn tham chiếu, hệ thống tích hợp hai bộ kiểm thử tự động chạy ngay trong luồng pipeline là \texttt{src/etl/silver/validate.py} và \texttt{src/etl/gold/validate.py}. Tại tầng Silver, ba kịch bản kiểm tra được thực thi gồm: \texttt{check\_nulls.sql} (xác nhận 0 giá trị \texttt{NULL} trên toàn bộ 9 cột bắt buộc như \texttt{row\_id}, \texttt{order\_id}, \texttt{order\_date}, \texttt{customer\_id}, \texttt{product\_id}, \texttt{sales}, \texttt{quantity}), \texttt{check\_duplicates.sql} (nhóm theo \texttt{row\_id} với điều kiện \texttt{HAVING COUNT(*) > 1} và xác nhận 0 dòng trùng lặp) và \texttt{check\_data\_quality.sql} (kiểm tra các quy tắc nghiệp vụ, xác nhận 0 đơn hàng có ngày giao trước ngày đặt, 0 dòng có doanh thu âm, 0 dòng có số lượng $\le 0$ và 0 dòng có chiết khấu ngoài đoạn $[0, 1]$).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đối soát dữ liệu (Data Reconciliation) và kiểm định chất lượng giữa các tầng}
+\label{tab:data_reconciliation}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|X|r|r|r|c|}
+\hline
+\textbf{Tiêu chí kiểm định \& Đối soát} & \textbf{Tầng Silver (\texttt{orders})} & \textbf{Tầng Gold (\texttt{fact\_sales})} & \textbf{Độ lệch} & \textbf{Trạng thái} \\
+\hline
+Tổng số dòng bản ghi (\texttt{total\_rows}) & 51.290 & 51.290 & 0 & Đạt (PASS) \\
+\hline
+Tổng doanh thu \texttt{SUM(sales)} (USD) & 12.642.501,91 & 12.642.501,91 & 0,00 & Đạt (PASS) \\
+\hline
+Tổng lợi nhuận \texttt{SUM(profit)} (USD) & 1.467.457,29 & 1.467.457,29 & 0,00 & Đạt (PASS) \\
+\hline
+Tổng sản lượng \texttt{SUM(quantity)} (Đơn vị) & 178.312 & 178.312 & 0 & Đạt (PASS) \\
+\hline
+Số bản ghi vi phạm độ mịn (\texttt{Duplicate row\_id}) & 0 & 0 & 0 & Đạt (PASS) \\
+\hline
+Số khóa ngoại mồ côi (\texttt{Orphan Foreign Keys}) & -- & 0 & 0 & Đạt (PASS) \\
+\hline
+Số bản ghi vi phạm miền giá trị nghiệp vụ & 0 & 0 & 0 & Đạt (PASS) \\
+\hline
+\end{tabularx}
+\end{table}
+
+Tại tầng Gold, bộ kiểm định thực thi ba kịch bản đối soát nghiêm ngặt: \texttt{check\_fact\_grain.sql} xác nhận bảng \texttt{gold.fact\_sales} bảo toàn nguyên vẹn độ mịn 1 dòng trên mỗi \texttt{row\_id}; \texttt{check\_foreign\_keys.sql} kiểm tra cả 6 cột khóa ngoại (\texttt{order\_date\_key}, \texttt{ship\_date\_key}, \texttt{customer\_key}, \texttt{product\_key}, \texttt{geography\_key}, \texttt{ship\_mode\_key}) và xác nhận không có bất kỳ bản ghi mồ côi nào (\texttt{orphan\_count = 0}); cuối cùng, \texttt{check\_aggregates.sql} thực hiện phép hợp \texttt{UNION ALL} để đối chiếu trực diện tổng số dòng, tổng doanh thu, tổng lợi nhuận và tổng số lượng hàng hóa giữa \texttt{silver.orders} và \texttt{gold.fact\_sales}. Kết quả thực nghiệm trong Bảng \ref{tab:data_reconciliation} chứng minh sự khớp nhau tuyệt đối đến từng xu lẻ (sai số bằng 0,00 USD), khẳng định tính đúng đắn và độ tin cậy của toàn bộ quy trình xây dựng Kho dữ liệu.

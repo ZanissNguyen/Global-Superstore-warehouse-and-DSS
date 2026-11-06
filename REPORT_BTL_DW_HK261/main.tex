@@ -1,0 +1,254 @@
+\documentclass[a4paper, 12pt]{article}
+\usepackage{tcolorbox}
+\usepackage{a4wide,amssymb,epsfig,latexsym,multicol,array,hhline,fancyhdr}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{lastpage}
+\usepackage{placeins}
+\usepackage{subfig}
+\usepackage[lined,boxed,commentsnumbered]{algorithm2e}
+\usepackage{enumerate}
+\usepackage{color}
+\usepackage{graphicx}			
+\usepackage{ragged2e}
+\usepackage{array}
+\usepackage{tabularx, caption}
+\usepackage{multirow}
+\usepackage[framemethod=tikz]{mdframed}
+\usepackage{multicol}
+\usepackage{rotating}
+\usepackage{graphics}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{epsfig}
+\usepackage{tikz}
+\usepackage{makecell}
+\usepackage[utf8]{vietnam}
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usetikzlibrary{arrows, snakes, backgrounds, fit, calc, positioning, arrows.meta, shapes.geometric}
+\usepackage{hyperref}
+\usepackage{indentfirst}
+\usepackage{float}
+\usepackage{xltabular}
+\def\thesislayout{	% A4: 210 × 297
+	\geometry{
+		paper=a4paper,
+		total={160mm,240mm},  % fix over page
+		left=2cm,
+        right=2cm,
+		top=1.5cm,
+        bottom=1.5cm,
+        includeheadfoot=true,
+        headheight=30pt
+	}
+}
+\hypersetup{urlcolor=blue,linkcolor=black,citecolor=black,colorlinks=true}
+\thesislayout
+\AtBeginDocument{\renewcommand*\contentsname{Mục lục}}
+\setlength{\headheight}{40pt}
+\pagestyle{fancy}
+\fancyhead{}
+\fancyhead[L]{
+ \begin{tabular}{rl}
+    \begin{picture}(25,15)(0,0)
+    \put(-3,-9){\includegraphics[width=17mm]{logobk.png}}
+    %\put(0,-8){\epsfig{width=10mm,figure=hcmut.eps}}
+   \end{picture}&
+	%\includegraphics[width=8mm, height=8mm]{hcmut.png} & %
+	\begin{tabular}{l}
+		\textbf{\bf \ttfamily Trường Đại học Bách khoa - ĐHQG-HCM}\\
+		\textbf{\bf \ttfamily Khoa Khoa học và Kỹ thuật Máy tính}
+	\end{tabular} 	
+ \end{tabular}
+}
+\fancyhead[R]{
+	\begin{tabular}{l}
+		\tiny \bf \\
+		\tiny \bf 
+	\end{tabular}  }
+\fancyfoot{} % clear all footer fields
+\fancyfoot[L]{\scriptsize \texttt{Bài tập lớn - Kho dữ liệu và Hệ hỗ trợ quyết định (CO4031) - Năm học 2025-2026}}
+\fancyfoot[R]{\scriptsize Trang {\thepage}/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\renewcommand{\contentsname}{Mục lục}
+%%%
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{3}
+\makeatletter
+\newcounter {subsubsubsection}[subsubsection]
+\renewcommand\thesubsubsubsection{\thesubsubsection .\@alph\c@subsubsubsection}
+\newcommand\subsubsubsection{\@startsection{subsubsubsection}{4}{\z@}%
+                                     {-3.25ex\@plus -1ex \@minus -.2ex}%
+                                     {1.5ex \@plus .2ex}%
+                                     {\normalfont\normalsize\bfseries}}
+\newcommand*\l@subsubsubsection{\@dottedtocline{3}{10.0em}{4.1em}}
+\newcommand*{\subsubsubsectionmark}[1]{}
+\makeatother
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+\definecolor{codeblue}{rgb}{0.0,0.0,255}     % Keywords
+\definecolor{codegreen}{rgb}{0,0.6,0}        % Comments
+\definecolor{codepurple}{rgb}{138,0,226}   % Strings
+\definecolor{codeorange}{rgb}{0.8,0.33,0}    % Types
+\definecolor{codegray}{rgb}{0.255,0.0,0.255}     % Line numbers
+\definecolor{codepreprocessor}{rgb}{0.5,0,0} % Preprocessor commands
+\definecolor{codebackground}{rgb}{0.95,0.95,0.92} % Background color
+
+\lstset{
+    language=R,
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\bfseries\color{codeblue},
+    commentstyle=\color{codegreen},
+    stringstyle=\color{codepurple},
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{black} % Viền khung sẽ hiển thị màu đen
+}
+\thesislayout
+\begin{document}
+\onehalfspacing
+\renewcommand{\refname}{Tài liệu tham khảo}
+
+\begin{titlepage}
+\begin{tikzpicture}[remember picture,overlay,inner sep=0,outer sep=0]
+     \draw[blue!70!black,line width=4pt] ([xshift=-1.5cm,yshift=-2cm]current page.north east) coordinate (A)--([xshift=1.5cm,yshift=-2cm]current page.north west) coordinate(B)--([xshift=1.5cm,yshift=2cm]current page.south west) coordinate (C)--([xshift=-1.5cm,yshift=2cm]current page.south east) coordinate(D)--cycle;
+
+     \draw ([yshift=0.5cm,xshift=-0.5cm]A)-- ([yshift=0.5cm,xshift=0.5cm]B)--
+     ([yshift=-0.5cm,xshift=0.5cm]B) --([yshift=-0.5cm,xshift=-0.5cm]B)--([yshift=0.5cm,xshift=-0.5cm]C)--([yshift=0.5cm,xshift=0.5cm]C)--([yshift=-0.5cm,xshift=0.5cm]C)-- ([yshift=-0.5cm,xshift=-0.5cm]D)--([yshift=0.5cm,xshift=-0.5cm]D)--([yshift=0.5cm,xshift=0.5cm]D)--([yshift=-0.5cm,xshift=0.5cm]A)--([yshift=-0.5cm,xshift=-0.5cm]A)--([yshift=0.5cm,xshift=-0.5cm]A);
+
+
+     \draw ([yshift=-0.3cm,xshift=0.3cm]A)-- ([yshift=-0.3cm,xshift=-0.3cm]B)--
+     ([yshift=0.3cm,xshift=-0.3cm]B) --([yshift=0.3cm,xshift=0.3cm]B)--([yshift=-0.3cm,xshift=0.3cm]C)--([yshift=-0.3cm,xshift=-0.3cm]C)--([yshift=0.3cm,xshift=-0.3cm]C)-- ([yshift=0.3cm,xshift=0.3cm]D)--([yshift=-0.3cm,xshift=0.3cm]D)--([yshift=-0.3cm,xshift=-0.3cm]D)--([yshift=0.3cm,xshift=-0.3cm]A)--([yshift=0.3cm,xshift=0.3cm]A)--([yshift=-0.3cm,xshift=0.3cm]A);
+
+   \end{tikzpicture}
+\begin{center}
+\textbf{ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH}\\
+\textbf{TRƯỜNG ĐẠI HỌC BÁCH KHOA}\\
+\textbf{KHOA KHOA HỌC VÀ KỸ THUẬT MÁY TÍNH} \\
+\end{center}
+\begin{figure}[h!]
+\begin{center}
+\includegraphics[width=8cm]{logobk.png}
+\end{center}
+\end{figure}
+\begin{center}
+\begin{tabular}{c}
+	\multicolumn{1}{c}{\textbf{{\Large BÁO CÁO BÀI TẬP LỚN}}}\\
+    \multicolumn{1}{c}{\textbf{{\Large MÔN: Kho dữ liệu và hệ hỗ trợ quyết định (CO4031)}}}\\
+	~~\\
+	\hline
+	\\
+	\multicolumn{1}{c}{\textbf{\Large \parbox{\textwidth}{\centering BÀI TẬP LỚN Kho dữ liệu và hệ hỗ trợ quyết định}}}\\
+	\\
+	\hline
+\end{tabular}
+\end{center}
+\begin{table}[h]
+    \centering
+    \begin{tabular}{rrrrlr}
+        & \textbf{Giảng viên hướng dẫn:} && & ThS. Lê Thị Bảo Thu & \\
+        & \textbf{Lớp:} &&& L01 & \\
+        & \textbf{Nhóm:} &&& 4 & \\
+        
+        & \textbf{Sinh viên thực hiện:} &&& Nguyễn Trọng Nhân  & 2212370 \\
+        &                      &&& Nguyễn Phú Tuệ     & 2213813 \\        
+        &                      &&& Nguyễn Hoàng Minh       & 2212057 \\
+        &                      &&& Hoàng Giữ Tiến Nhất & 2312460 \\
+        &                      &&& Mai Xuân Phúc        & 2312687 \\
+    \end{tabular}
+\end{table}
+% \vspace{0.3cm}
+\begin{center}
+\textit{Thành phố Hồ Chí Minh, Tháng 4/2026}
+\end{center}
+\end{titlepage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\begin{center}
+    \Large{\textbf{Danh sách thành viên \& khối lượng công việc}}
+\end{center}
+\begin{table}[h]
+    \centering
+    \renewcommand{\arraystretch}{1.3} % Điều chỉnh khoảng cách giữa các dòng
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{|c|c|l|l|l|c|}
+            \hline
+            \textbf{STT} & \textbf{MSSV} & \textbf{Họ} & \textbf{Tên} & \textbf{Nhiệm vụ} & \textbf{\% Hoàn thành} \\
+            \hline
+            1 & 2212370  & Nguyễn Trọng    & Nhân & Mục 1, Mục 2.1, 2.2, Kiểm thử dữ liệu & 100\% \\
+            \hline
+            2 & 2213813  & Nguyễn Phú  & Tuệ  & Mục 2.3, 2.4, Thiết kế Star Schema \& OLAP & 100\% \\
+            \hline
+            3 & 2212057  & Nguyễn Hoàng  & Minh  & Mục 3 (ETL Bronze -- Silver -- Gold), Dashboard & 100\% \\
+            \hline
+            4 & 2312460  & Hoàng Giữ Tiến  & Nhất & Kiến trúc DW, Mục 3.3.4 (Incremental), Mục 4 (DSS) & 100\% \\
+            \hline
+            5 & 2312687  & Mai Xuân  & Phúc  & Mục 4 (Thực nghiệm DSS), Mục 5, Mục 6 & 100\% \\
+            \hline
+        \end{tabular}%
+    }
+\end{table}
+\newpage
+
+\section*{Lời cảm ơn}
+Nhóm thực hiện xin gửi lời cảm ơn chân thành và sâu sắc đến giảng viên hướng dẫn môn học Kho dữ liệu và Hệ hỗ trợ quyết định (CO4031), Khoa Khoa học và Kỹ thuật Máy tính, Trường Đại học Bách Khoa -- ĐHQG TP.HCM. Những kiến thức nền tảng và định hướng phương pháp luận về mô hình hóa dữ liệu đa chiều, thiết kế quy trình trích xuất -- biến đổi -- nạp (ETL), khai thác truy vấn phân tích trực tuyến (OLAP) và xây dựng hệ hỗ trợ quyết định (DSS) được giảng dạy trong học kỳ là cơ sở quan trọng giúp nhóm hoàn thành đề tài nghiên cứu và xây dựng hệ thống thực nghiệm này.
+
+\newpage
+\section*{Tóm tắt}
+Báo cáo trình bày quá trình phân tích, thiết kế và hiện thực hóa hệ thống Kho dữ liệu (Data Warehouse) tích hợp Hệ hỗ trợ quyết định (Decision Support System -- DSS) cho bài toán bán lẻ đa quốc gia trên bộ dữ liệu Global Superstore gồm 51.290 dòng giao dịch tại 147 quốc gia trong giai đoạn 2011--2014. Hệ thống được triển khai theo kiến trúc phân tầng Medallion (\texttt{bronze}, \texttt{silver}, \texttt{gold}) trên hệ quản trị cơ sở dữ liệu PostgreSQL 17 đóng gói trong Docker. Quy trình ETL tự động hóa hoàn toàn việc kiểm toán tệp nguồn qua mã băm SHA-256, xử lý ngày tháng đa định dạng, điền khuyết mã bưu chính, đảm bảo tính lũy đẳng và hỗ trợ nạp gia tăng (Incremental Loading) thông qua cơ chế bắt thay đổi dữ liệu. Tại tầng Gold, mô hình hình sao (Star Schema) với bảng sự kiện \texttt{gold.fact\_sales} và 5 bảng chiều chuẩn hóa khóa thay thế đạt độ chính xác đối soát tài chính tuyệt đối (12.642.501,91 USD doanh thu, 1.467.457,29 USD lợi nhuận), kết hợp cùng 7 kịch bản truy vấn OLAP và 3 bảng Materialized Views cho thời gian phản hồi dưới 50 ms. Trên nền tảng kho dữ liệu, phân hệ DSS triển khai ba mô-đun gồm: dự báo chuỗi thời gian bằng thuật toán San bằng mũ có xu thế (MAPE đạt 14,72\%), khai phá luật kết hợp giỏ hàng Apriori hai cấp độ trên 25.035 đơn hàng (phát hiện 14 luật cấp tiểu ngành hàng và 27 luật cấp sản phẩm với Lift lên tới 315,57), và mô phỏng kịch bản What-If dựa trên độ co giãn của cầu theo giá. Kết quả toàn hệ thống được tích hợp trực tiếp lên dịch vụ FastAPI, giao diện Web tương tác Streamlit và báo cáo quản trị Power BI Desktop.
+
+\newpage
+\tableofcontents
+\newpage
+\renewcommand{\listfigurename}{Danh mục hình ảnh}
+\listoffigures
+\addcontentsline{toc}{section}{\listfigurename}
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\input{1.Gioi_thieu.tex}
+\newpage
+\input{2.dataset_bussinesslogic.tex}
+\newpage
+\input{3.thiet_ke_data_warehouse.tex}
+\newpage
+\input{4.phat_trien_dss.tex}
+\newpage
+\input{5.ket_qua_danh_gia.tex}
+\newpage
+\input{6.ket_luan.tex}
+\newpage
+% ===== Tài liệu tham khảo =====
+
+\begin{thebibliography}{9}
+\addcontentsline{toc}{section}{Tài liệu tham khảo}
+
+\bibitem{kimball2013}
+Ralph Kimball, Margy Ross (2013), \textit{The Data Warehouse Toolkit: The Definitive Guide to Dimensional Modeling}, 3rd Edition, John Wiley \& Sons, Inc.
+
+\bibitem{turban2014}
+Efraim Turban, Ramesh Sharda, Dursun Delen (2014), \textit{Business Intelligence and Analytics: Systems for Decision Support}, 10th Edition, Pearson Education.
+
+\bibitem{simon1960}
+Herbert A. Simon (1960), \textit{The New Science of Management Decision}, Harper \& Row, New York.
+
+\bibitem{agrawal1994}
+Rakesh Agrawal, Ramakrishnan Srikant (1994), ``Fast Algorithms for Mining Association Rules in Large Databases'', \textit{Proceedings of the 20th International Conference on Very Large Data Bases (VLDB)}, pp. 487--499.
+
+\bibitem{hyndman2021}
+Rob J. Hyndman, George Athanasopoulos (2021), \textit{Forecasting: Principles and Practice}, 3rd Edition, OTexts, Melbourne, Australia.
+
+\bibitem{postgresql17}
+The PostgreSQL Global Development Group (2024), \textit{PostgreSQL 17 Official Documentation -- Data Warehousing, Window Functions, and Materialized Views}, \url{https://www.postgresql.org/docs/17/}.
+
+\end{thebibliography}
+
+\end{document}

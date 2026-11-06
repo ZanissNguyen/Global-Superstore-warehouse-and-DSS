@@ -1,0 +1,202 @@
+\section{Phát triển Decision Support System (DSS)}
+
+\subsection{Mục tiêu và kiến trúc DSS}
+
+Nếu như Kho dữ liệu (Data Warehouse) và các truy vấn OLAP tập trung giải quyết các câu hỏi mang tính mô tả và chẩn đoán quá khứ (\textit{Chuyện gì đã xảy ra và tại sao?}), thì Hệ hỗ trợ quyết định (Decision Support System -- DSS) được phát triển nhằm nâng cấp năng lực của hệ thống lên mức độ phân tích dự đoán (\textit{Predictive Analytics: Chuyện gì sẽ xảy ra tiếp theo?}) và phân tích đề xuất hành động (\textit{Prescriptive Analytics: Doanh nghiệp nên hành động như thế nào là tối ưu?}). Mục tiêu cốt lõi của phân hệ DSS trong đề tài là cung cấp cho nhà quản trị của Global Superstore các mô hình toán học và thuật toán khai phá dữ liệu vận hành trực tiếp trên nguồn dữ liệu sạch của tầng Gold, từ đó tự động sinh ra các dự báo định lượng, các gợi ý ghép gói sản phẩm bán chéo và các khuyến nghị điều chỉnh chính sách chiết khấu.
+
+Về mặt phương pháp luận, kiến trúc DSS của hệ thống được xây dựng dựa trên sự kết hợp giữa mô hình cấu trúc ba thành phần cổ điển của Turban \cite{turban2014} và chu trình ra quyết định bốn giai đoạn của Herbert Simon \cite{simon1960} (Thám sát -- Thiết kế -- Lựa chọn -- Thực thi). Cụ thể, phân hệ Quản lý dữ liệu (Data Management Subsystem) bao gồm lược đồ \texttt{gold} (cung cấp dữ liệu lịch sử đầu vào) và lược đồ chuyên biệt \texttt{dss} (được khởi tạo bởi \texttt{src/sql/gold/schema/create\_dss\_schema.sql}) gồm bốn bảng cơ sở dữ liệu là \texttt{dss.forecast\_run}, \texttt{dss.forecast\_result}, \texttt{dss.association\_run} và \texttt{dss.association\_rule}. Phân hệ Quản lý mô hình (Model Management Subsystem) được đóng gói thành ba gói chương trình Python độc lập trong thư mục \texttt{src/dss/} gồm mô-đun dự báo chuỗi thời gian (\texttt{predictive/run.py}), mô-đun khai phá luật kết hợp giỏ hàng (\texttt{association/run.py}) và mô-đun mô phỏng kinh tế lượng (\texttt{what\_if/simulate.py}). Phân hệ Giao diện người dùng (User Interface Subsystem) kết nối trực tiếp với tầng mô hình và cơ sở dữ liệu thông qua dịch vụ RESTful API (\texttt{src/app/api/main.py}), ứng dụng Web tương tác bốn phân trang (\texttt{src/app/main.py}) và bảng điều khiển Power BI.
+
+\subsection{Predictive Analytics}
+
+\subsubsection{Bài toán}
+
+Trong quản trị chuỗi cung ứng và kế hoạch tài chính bán lẻ, việc dự báo chính xác doanh số bán hàng và sản lượng hàng hóa tiêu thụ trong các tháng tiếp theo giữ vai trò quyết định đối với việc phân bổ ngân sách mua hàng, chuẩn bị diện tích kho bãi và tối ưu hóa dòng tiền lưu động. Bài toán đặt ra cho mô-đun Predictive Analytics là: từ chuỗi dữ liệu lịch sử 48 tháng liên tục (từ tháng 01/2011 đến tháng 12/2014) được tổng hợp từ 51.290 giao dịch trong bảng sự kiện \texttt{gold.fact\_sales} và bảng chiều thời gian \texttt{gold.dim\_date}, hãy xây dựng mô hình dự báo chuỗi thời gian để ước lượng giá trị doanh thu thuần hàng tháng (\texttt{total\_sales}) hoặc sản lượng tiêu thụ (\texttt{total\_quantity}) cho tầm nhìn $H = 6$ tháng tiếp theo (từ tháng 01/2015 đến tháng 06/2015), đồng thời xác định dải khoảng tin cậy thống kê 95\% (Lower Bound và Upper Bound) nhằm định lượng biên độ rủi ro dao động của thị trường.
+
+\subsubsection{Phương pháp}
+
+Quy trình dự báo được cài đặt trong mô-đun \texttt{src/dss/predictive/run.py}. Trước hết, hàm \texttt{extract\_sales\_series()} thực thi truy vấn SQL kết nối \texttt{gold.fact\_sales} với \texttt{gold.dim\_date}, gom nhóm theo \texttt{d.year}, \texttt{d.month}, \texttt{d.year\_month} và sắp xếp theo đúng trình tự thời gian để thu được chuỗi quan sát $Y = \{y_0, y_1, \dots, y_{n-1}\}$ với $n = 48$ điểm dữ liệu tháng. Để đánh giá khách quan năng lực khái quát hóa của mô hình và tránh hiện tượng rò rỉ dữ liệu tương lai (Data Leakage), chuỗi thời gian được phân tách nghiêm ngặt theo thứ tự thời gian với tỷ lệ 75\% huấn luyện và 25\% kiểm thử: tập huấn luyện (Train Set) gồm 36 tháng đầu tiên từ \texttt{2011-01-01} đến \texttt{2013-12-01}, và tập kiểm thử (Test Set) gồm 12 tháng của năm cuối cùng từ \texttt{2014-01-01} đến \texttt{2014-12-01}.
+
+Về thuật toán dự báo, hệ thống triển khai phương pháp San bằng mũ kết hợp xu thế tuyến tính (Exponential Smoothing with Linear Trend) \cite{hyndman2021} và đối sánh với mô hình cơ sở Trung bình trượt 3 tháng (Moving Average Baseline với cửa sổ $w=3$). Với hệ số làm mượt $\alpha \in (0, 1)$ (được thiết lập $\alpha = 0,4$ qua thực nghiệm để cân bằng giữa trọng số của các quan sát gần nhất và tính ổn định dài hạn), chuỗi giá trị làm mượt $S_t$ được tính đệ quy theo công thức:
+\begin{equation}
+    S_0 = y_0, \quad S_t = \alpha \cdot y_t + (1 - \alpha) \cdot S_{t-1} \quad \forall t \in \{1, 2, \dots, n-1\}
+\end{equation}
+Hệ số góc phản ánh tốc độ tăng trưởng xu thế trung bình theo tháng ($b$) trên toàn chuỗi và giá trị dự báo điểm $\hat{y}_{n+h}$ tại bước dự báo tương lai $h \in \{1, 2, \dots, H\}$ được xác định bởi:
+\begin{equation}
+    b = \frac{S_{n-1} - S_0}{n}, \quad \hat{y}_{n+h} = S_{n-1} + b \cdot h
+\end{equation}
+Gọi $\sigma_e = \sqrt{\frac{1}{|T_{\text{test}}|}\sum_{t \in T_{\text{test}}} (y_t - \hat{y}_t - \bar{e})^2}$ là độ lệch chuẩn của phần dư dự báo trên tập kiểm thử, khoảng tin cậy 95\% (tương ứng với phân vị chuẩn $z_{0,975} = 1,96$) được xác định bởi cận dưới $LB_{n+h} = \max(0, \hat{y}_{n+h} - 1,96 \cdot \sigma_e)$ và cận trên $UB_{n+h} = \hat{y}_{n+h} + 1,96 \cdot \sigma_e$. Chất lượng mô hình trên tập kiểm thử được định lượng thông qua ba độ đo sai số chuẩn gồm Sai số tuyệt đối trung bình (MAE), Căn bậc hai sai số toàn phương trung bình (RMSE) và Sai số phần trăm tuyệt đối trung bình (MAPE):
+\begin{equation}
+    \text{MAE} = \frac{1}{m}\sum_{t=1}^{m} |y_t - \hat{y}_t|, \quad
+    \text{RMSE} = \sqrt{\frac{1}{m}\sum_{t=1}^{m} (y_t - \hat{y}_t)^2}, \quad
+    \text{MAPE} = \frac{100\%}{m}\sum_{t=1}^{m} \left|\frac{y_t - \hat{y}_t}{y_t}\right|
+\end{equation}
+
+\subsubsection{Thực nghiệm và kết quả}
+
+Khi thực thi lệnh \texttt{python -m src.dss.predictive.run --target sales --horizon 6}, hệ thống tiến hành huấn luyện, đánh giá trên tập kiểm thử 12 tháng năm 2014 và tự động lưu thông tin siêu dữ liệu vào bảng \texttt{dss.forecast\_run} cùng 6 mốc dự báo tương lai vào bảng \texttt{dss.forecast\_result}. Trên tập kiểm thử năm 2014 (nơi doanh thu thực tế hàng tháng dao động mạnh từ 180.000 USD đến 555.279 USD), mô hình đạt chỉ số $\text{MAE} = 48.591,40\text{ USD}$, $\text{RMSE} = 59.185,84\text{ USD}$ và tỷ lệ sai số tương đối $\text{MAPE} = 14,72\%$ (tương ứng độ chính xác trung bình đạt $85,28\%$, vượt ngưỡng yêu cầu $\text{MAPE} < 15\%$ đối với dữ liệu bán lẻ đa quốc gia có biến động mùa vụ cao). Chi tiết kết quả dự báo cho 6 tháng đầu năm 2015 được trình bày trong Bảng \ref{tab:forecast_results}.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả dự báo doanh thu 6 tháng đầu năm 2015 lưu trong bảng \texttt{dss.forecast\_result}}
+\label{tab:forecast_results}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|c|c|r|r|r|}
+\hline
+\textbf{Kỳ dự báo (Tháng)} & \textbf{Ngày mốc (\texttt{forecast\_date})} & \textbf{Dự báo trung tâm (USD)} & \textbf{Cận dưới 95\% CI (USD)} & \textbf{Cận trên 95\% CI (USD)} \\
+\hline
+Tháng 01/2015 ($h=1$) & \texttt{2015-01-01} & 491.719,91 & 379.453,66 & 603.986,17 \\
+\hline
+Tháng 02/2015 ($h=2$) & \texttt{2015-02-01} & 499.736,68 & 387.470,43 & 612.002,93 \\
+\hline
+Tháng 03/2015 ($h=3$) & \texttt{2015-03-01} & 507.753,44 & 395.487,19 & 620.019,69 \\
+\hline
+Tháng 04/2015 ($h=4$) & \texttt{2015-04-01} & 515.770,21 & 403.503,96 & 628.036,46 \\
+\hline
+Tháng 05/2015 ($h=5$) & \texttt{2015-05-01} & 523.786,97 & 411.520,72 & 636.053,22 \\
+\hline
+Tháng 06/2015 ($h=6$) & \texttt{2015-06-01} & 531.803,73 & 419.537,48 & 644.069,98 \\
+\hline
+\end{tabularx}
+\end{table}
+
+Kết quả dự báo cho thấy xu hướng doanh số toàn cầu trong nửa đầu năm 2015 tiếp tục duy trì đà tăng trưởng tích cực với mức tăng trung bình khoảng $+8.016,76\text{ USD/tháng}$, tiến dần từ mức 491.719,91 USD vào tháng 01/2015 lên 531.803,73 USD vào tháng 06/2015. Dải tin cậy 95\% cung cấp cho bộ phận kế hoạch tài chính kịch bản thận trọng (cận dưới quanh mức 379.453 -- 419.537 USD) và kịch bản khả quan (cận trên quanh mức 603.986 -- 644.069 USD) để chủ động chuẩn bị nguồn cung hàng hóa.
+
+\subsection{Association Rule Mining}
+
+\subsubsection{Bài toán}
+
+Trong thương mại điện tử, việc gia tăng Giá trị đơn hàng trung bình (Average Order Value -- AOV) trên tập khách hàng hiện hữu mang lại hiệu quả chi phí cao hơn nhiều so với việc tìm kiếm khách hàng mới. Bài toán đặt ra là: từ 25.035 giỏ hàng giao dịch thực tế (mỗi giỏ hàng tương ứng với một mã \texttt{order\_id} chứa một tập hợp các mặt hàng được mua cùng lúc), hệ thống cần khai phá các luật kết hợp dạng $A \rightarrow B$ (nếu khách hàng mua mục hàng $A$ thì có xu hướng mua kèm mục hàng $B$ trong cùng đơn hàng) nhằm phục vụ hệ thống gợi ý bán chéo (Cross-selling) và thiết kế các gói sản phẩm khuyến mãi (Product Bundling).
+
+Một thách thức kỹ thuật lớn của bộ dữ liệu Global Superstore là hiện tượng thưa dữ liệu (Data Sparsity) khi xét ở cấp độ mã sản phẩm chi tiết: với 10.292 mặt hàng khác nhau phân bổ trên 25.035 đơn hàng, xác suất hai sản phẩm cụ thể bất kỳ xuất hiện chung trong hơn 0,5\% tổng số đơn hàng (tức $\ge 125$ đơn hàng) là bằng không. Nếu áp dụng cứng nhắc một ngưỡng độ hỗ trợ phần trăm cao cho mọi cấp độ, thuật toán sẽ trả về tập luật rỗng. Do đó, bài toán đòi hỏi một chiến lược khai phá phân cấp hai tầng: vừa khai phá ở cấp độ Tiểu ngành hàng (\texttt{sub\_category}) để hoạch định chiến lược trưng bày gian hàng vĩ mô, vừa khai phá ở cấp độ Tên sản phẩm chi tiết (\texttt{product\_name}) với ngưỡng đếm tuyệt đối phù hợp để phát hiện các cặp sản phẩm cụ thể có mức độ gắn kết cao.
+
+\subsubsection{Phương pháp}
+
+Mô-đun khai phá giỏ hàng được hiện thực trong \texttt{src/dss/association/run.py}. Ở bước trích xuất giỏ hàng, hàm \texttt{extract\_baskets(engine, level)} thực thi truy vấn \texttt{SELECT DISTINCT f.order\_id, p.product\_name (hoặc p.sub\_category) AS item\_name FROM gold.fact\_sales f JOIN gold.dim\_product p ON f.product\_key = p.product\_key}, sau đó gom nhóm theo \texttt{order\_id} để tạo danh sách $N = 25.035$ tập giao dịch $T = \{t_1, t_2, \dots, t_N\}$. Đối với mỗi cặp mục hàng $(A, B)$ xuất hiện đồng thời trong ít nhất $c_{\min}$ giỏ hàng (\texttt{min\_count}), hệ thống tính toán ba độ đo chuẩn của thuật toán Apriori \cite{agrawal1994} gồm Độ hỗ trợ (Support), Độ tin cậy (Confidence) và Độ nâng (Lift):
+\begin{equation}
+    \text{Support}(A \rightarrow B) = \frac{|\{t \in T : \{A, B\} \subseteq t\}|}{N} = P(A \cap B)
+\end{equation}
+\begin{equation}
+    \text{Confidence}(A \rightarrow B) = \frac{\text{Support}(A \rightarrow B)}{\text{Support}(A)} = P(B \mid A)
+\end{equation}
+\begin{equation}
+    \text{Lift}(A \rightarrow B) = \frac{\text{Confidence}(A \rightarrow B)}{\text{Support}(B)} = \frac{P(A \cap B)}{P(A) \cdot P(B)}
+\end{equation}
+Trong đó, chỉ số $\text{Lift}(A \rightarrow B) > 1$ chứng tỏ việc mua $A$ làm tăng xác suất mua kèm $B$ cao hơn gấp $\text{Lift}$ lần so với xác suất mua $B$ ngẫu nhiên độc lập. Các luật thỏa mãn đồng thời ba ngưỡng lọc $\text{count} \ge c_{\min}$, $\text{Support} \ge s_{\min}$, $\text{Confidence} \ge c_{\text{conf}}$ và $\text{Lift} \ge l_{\min}$ được sắp xếp giảm dần theo hệ số Lift và ghi nhận vào hai bảng \texttt{dss.association\_run} và \texttt{dss.association\_rule}.
+
+\subsubsection{Thực nghiệm và kết quả}
+
+Nhóm tiến hành thực nghiệm trên toàn bộ 25.035 giao dịch ở cả hai cấp độ phân tích. Ở cấp độ thứ nhất -- cấp độ Tiểu ngành hàng (\texttt{--level sub\_category --min-support 0.005 --min-confidence 0.10 --min-lift 1.05}), thuật toán phát hiện được 14 luật kết hợp có ý nghĩa quản trị danh mục rõ nét, trong đó 8 luật tiêu biểu nhất được trình bày trong Bảng \ref{tab:assoc_subcat}. Kết quả chỉ ra rằng khách hàng mua Máy sao chụp (\texttt{Copiers}) có xu hướng mua kèm Nhãn dán (\texttt{Labels}, $\text{Lift} = 1,17$), Tủ sách (\texttt{Bookcases}, $\text{Lift} = 1,13$) và Phong bì (\texttt{Envelopes}, $\text{Lift} = 1,11$); trong khi khách hàng mua Thiết bị văn phòng (\texttt{Appliances}) thường mua kèm Giấy in (\texttt{Paper}, $\text{Confidence} = 15,0\%, \text{Lift} = 1,16$) và Bìa hồ sơ (\texttt{Binders}, $\text{Confidence} = 23,1\%, \text{Lift} = 1,08$).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả khai phá luật kết hợp ở cấp độ Tiểu ngành hàng (\texttt{sub\_category}) trên 25.035 giỏ hàng}
+\label{tab:assoc_subcat}
+\footnotesize
+\renewcommand{\arraystretch}{1.22}
+\begin{tabularx}{\textwidth}{|c|l|l|r|r|r|X|}
+\hline
+\textbf{Hạng} & \textbf{Nhóm hàng mua trước ($A$)} & \textbf{Nhóm hàng mua kèm ($B$)} & \textbf{Support} & \textbf{Confidence} & \textbf{Lift} & \textbf{Ý nghĩa nghiệp vụ bán chéo} \\
+\hline
+1 & \texttt{Copiers} & \texttt{Labels} & 0,98\% & 11,60\% & 1,17 & Gợi ý vật tư nhãn in khi mua máy photocopy. \\
+\hline
+2 & \texttt{Appliances} & \texttt{Paper} & 1,01\% & 15,00\% & 1,16 & Đề xuất giấy văn phòng khi mua thiết bị. \\
+\hline
+3 & \texttt{Copiers} & \texttt{Bookcases} & 0,87\% & 10,30\% & 1,13 & Mua sắm đồng bộ thiết bị và nội thất lưu trữ. \\
+\hline
+4 & \texttt{Machines} & \texttt{Bookcases} & 0,58\% & 10,20\% & 1,12 & Kết hợp máy móc văn phòng và kệ tủ hồ sơ. \\
+\hline
+5 & \texttt{Copiers} & \texttt{Envelopes} & 0,87\% & 10,30\% & 1,11 & Mua kèm phong bì ấn phẩm cho văn phòng. \\
+\hline
+6 & \texttt{Machines} & \texttt{Labels} & 0,62\% & 10,80\% & 1,10 & Bán kèm nhãn dán cho thiết bị phần cứng. \\
+\hline
+7 & \texttt{Appliances} & \texttt{Binders} & 1,56\% & 23,10\% & 1,08 & Gói vật tư lưu trữ văn phòng phổ biến nhất. \\
+\hline
+8 & \texttt{Accessories} & \texttt{Phones} & 1,55\% & 13,40\% & 1,07 & Bán chéo phụ kiện công nghệ cùng điện thoại. \\
+\hline
+\end{tabularx}
+\end{table}
+
+Ở cấp độ thứ hai -- cấp độ Sản phẩm chi tiết (\texttt{--level product --min-count 3 --min-confidence 0.10 --min-lift 1.2}), hệ thống phát hiện được 27 luật kết hợp chặt chẽ giữa các mặt hàng cụ thể với hệ số Lift rất cao (Bảng \ref{tab:assoc_product}). Đáng chú ý nhất là cặp sản phẩm túi gửi thư \texttt{Jiffy Mailers, Set of 50} và ổ nhớ \texttt{Memorex Flash Drive, USB} đạt độ tin cậy 21,43\% và hệ số $\text{Lift} = 315,57$, hay cặp máy fax \texttt{Brother Fax and Copier, Color} và sổ ghi lời nhắn \texttt{SanDisk Message Books, Recycled} đạt $\text{Lift} = 223,53$. Các luật này phản ánh chính xác thói quen mua sắm theo bộ dụng cụ văn phòng trọn gói của nhóm khách hàng doanh nghiệp.
+
+\begin{table}[H]
+\centering
+\caption{Top các luật kết hợp mạnh nhất ở cấp độ Sản phẩm SKU chi tiết lưu trong \texttt{dss.association\_rule}}
+\label{tab:assoc_product}
+\footnotesize
+\renewcommand{\arraystretch}{1.22}
+\begin{tabularx}{\textwidth}{|c|X|X|r|r|r|}
+\hline
+\textbf{Hạng} & \textbf{Sản phẩm mua trước (Antecedent $A$)} & \textbf{Sản phẩm gợi ý mua kèm (Consequent $B$)} & \textbf{Support} & \textbf{Confidence} & \textbf{Lift} \\
+\hline
+1 & \texttt{Jiffy Mailers, Set of 50} & \texttt{Memorex Flash Drive, USB} & 0,012\% & 21,43\% & 315,57 \\
+\hline
+2 & \texttt{Memorex Flash Drive, USB} & \texttt{Jiffy Mailers, Set of 50} & 0,012\% & 17,65\% & 315,57 \\
+\hline
+3 & \texttt{SanDisk Message Books, Recycled} & \texttt{Brother Fax and Copier, Color} & 0,012\% & 21,43\% & 223,53 \\
+\hline
+4 & \texttt{Brother Fax and Copier, Color} & \texttt{SanDisk Message Books, Recycled} & 0,012\% & 12,50\% & 223,53 \\
+\hline
+5 & \texttt{OIC Staples, Assorted Sizes} & \texttt{Kraft Clasp Envelope, clear poly} & 0,012\% & 12,00\% & 107,29 \\
+\hline
+6 & \texttt{Hoover Microwave, White} & \texttt{Fellowes Folders, Blue} & 0,012\% & 16,67\% & 106,99 \\
+\hline
+7 & \texttt{Tenex Light Bulb, Duo Pack} & \texttt{Binney \& Smith Highlighters} & 0,012\% & 16,67\% & 104,31 \\
+\hline
+8 & \texttt{Apple Office Telephone, Caller ID} & \texttt{Sharp Copy Machine, Color} & 0,012\% & 13,04\% & 96,04 \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{Mô phỏng kịch bản What-If (Price Elasticity Simulation)}
+
+\subsubsection{Bài toán}
+
+Như đã phân tích trong phần khám phá dữ liệu, việc lạm dụng chiết khấu là nguyên nhân hàng đầu gây thất thoát lợi nhuận tại Global Superstore. Trước khi phê duyệt một chương trình điều chỉnh tỷ lệ chiết khấu thêm một lượng $\Delta d$ (có thể tăng chiết khấu $\Delta d > 0$ để kích cầu hoặc cắt giảm chiết khấu $\Delta d < 0$ để bảo vệ biên lợi nhuận) cho một khu vực thị trường và ngành hàng cụ thể, nhà quản trị cần biết trước doanh thu và lợi nhuận ròng sẽ biến đổi như thế nào dưới tác động của quy luật cung cầu.
+
+\subsubsection{Phương pháp}
+
+Mô-đun mô phỏng kịch bản What-If được xây dựng trong \texttt{src/dss/what\_if/simulate.py}. Khi người dùng chọn một thị trường mục tiêu (\texttt{market}) và một ngành hàng (\texttt{category}), hàm \texttt{fetch\_baseline\_from\_db()} lập tức truy vấn trực tiếp vào bảng sự kiện \texttt{gold.fact\_sales} kết nối cùng \texttt{dim\_geography} và \texttt{dim\_product} để trích xuất ba tham số trạng thái gốc thực tế (Baseline) gồm: doanh thu hiện tại $S_{\text{base}}$, lợi nhuận ròng hiện tại $P_{\text{base}}$ và mức chiết khấu trung bình hiện tại $d_{\text{base}}$. Khi áp dụng mức điều chỉnh chiết khấu $\Delta d$, tỷ lệ chiết khấu mới được giới hạn trong miền hợp lệ $d_{\text{new}} = \min(0,85; \max(0,0; d_{\text{base}} + \Delta d))$. Tỷ lệ phần trăm thay đổi của mức giá bán thực tế mà khách hàng phải trả là:
+\begin{equation}
+    \frac{\Delta P}{P} = \frac{(1 - d_{\text{new}}) - (1 - d_{\text{base}})}{1 - d_{\text{base}}}
+\end{equation}
+Gọi $e > 0$ là hệ số co giãn của cầu theo giá (Price Elasticity of Demand, mặc định $e = 1,4$ đối với các mặt hàng thương mại điện tử có tính cạnh tranh cao), tỷ lệ thay đổi sản lượng tiêu thụ dự kiến $\frac{\Delta Q}{Q}$, doanh thu mô phỏng $S_{\text{new}}$, tổng chi phí khả biến tương ứng $C_{\text{new}}$ và lợi nhuận ròng mô phỏng $P_{\text{new}}$ được tính toán theo hệ phương trình kinh tế lượng:
+\begin{equation}
+    \frac{\Delta Q}{Q} = -e \cdot \frac{\Delta P}{P}, \quad
+    S_{\text{new}} = S_{\text{base}} \cdot \left(1 + \frac{\Delta Q}{Q}\right) \cdot \frac{1 - d_{\text{new}}}{1 - d_{\text{base}}}
+\end{equation}
+\begin{equation}
+    C_{\text{base}} = S_{\text{base}} - P_{\text{base}}, \quad
+    C_{\text{new}} = C_{\text{base}} \cdot \left(1 + \frac{\Delta Q}{Q}\right), \quad
+    P_{\text{new}} = S_{\text{new}} - C_{\text{new}}
+\end{equation}
+Dựa trên kết quả mô phỏng, hệ thống áp dụng bộ quy tắc suy diễn khuyến nghị tự động gồm ba mức: nếu $P_{\text{new}} < 0$ hoặc biên lợi nhuận mới $M_{\text{new}} = (P_{\text{new}}/S_{\text{new}})\times 100\% < 5\%$, hệ thống trả về trạng thái \texttt{[!] WARNING / REJECT} (bác bỏ kịch bản do xói mòn lợi nhuận nghiêm trọng); nếu $M_{\text{new}} \ge 5\%$ nhưng $P_{\text{new}} < P_{\text{base}}$, hệ thống trả về \texttt{[*] CAUTION} (cảnh báo doanh số tăng không bù đắp được chi phí giảm giá); ngược lại nếu $P_{\text{new}} \ge P_{\text{base}}$ và $M_{\text{new}} \ge 5\%$, hệ thống trả về \texttt{[+] APPROVE / VIABLE} (khuyến nghị phê duyệt thực thi).
+
+\subsubsection{Thực nghiệm và kết quả}
+
+Bảng \ref{tab:what_if_results} trình bày kết quả thực nghiệm mô phỏng trên dữ liệu gốc thực tế của ngành hàng Nội thất (\texttt{Furniture}) tại thị trường \texttt{APAC} ($S_{\text{base}} = 1.344.282,66\text{ USD}$, $P_{\text{base}} = 109.126,65\text{ USD}$, $d_{\text{base}} = 15,82\%$, biên lợi nhuận gốc $M_{\text{base}} = 8,12\%$) với hệ số co giãn $e = 1,4$. Ở kịch bản 1, khi tăng chiết khấu thêm $+5,0\%$ (lên $20,82\%$), mặc dù sản lượng cầu tăng giúp doanh thu tăng nhẹ $+2,02\%$ lên 1.371.400,25 USD, nhưng tổng chi phí khả biến tăng theo sản lượng khiến lợi nhuận ròng sụt giảm tới $-68,89\%$ (chỉ còn 33.949,20 USD, biên lợi nhuận rơi xuống 2,48\%), do đó hệ thống tự động bác bỏ (\texttt{REJECT}). Ngược lại, ở kịch bản 2, khi thực hiện cắt giảm $-5,0\%$ chiết khấu (xuống còn $10,82\%$), dù doanh thu giảm nhẹ $-2,99\%$ xuống 1.304.063,11 USD, lợi nhuận ròng lại tăng vọt $+62,67\%$ lên mức 177.515,43 USD và nâng biên lợi nhuận lên 13,61\%, được hệ thống khuyến nghị phê duyệt (\texttt{APPROVE}).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả thực nghiệm mô phỏng What-If đối với ngành hàng Furniture tại thị trường APAC ($e=1,4$)}
+\label{tab:what_if_results}
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|l|r|r|r|r|X|}
+\hline
+\textbf{Kịch bản mô phỏng} & \textbf{Chiết khấu} & \textbf{Doanh thu (USD)} & \textbf{Lợi nhuận (USD)} & \textbf{Biên LN} & \textbf{Quyết định tự động của DSS} \\
+\hline
+Hiện trạng (Baseline CSDL) & 15,82\% & 1.344.282,66 & 109.126,65 & 8,12\% & Trạng thái tham chiếu hiện hành từ tầng Gold. \\
+\hline
+Kịch bản 1: Tăng CK $+5,0\%$ & 20,82\% & 1.371.400,25 ($+2,02\%$) & 33.949,20 ($-68,89\%$) & 2,48\% & \textbf{\texttt{[!] REJECT:}} Xói mòn lợi nhuận dưới ngưỡng an toàn 5\%. \\
+\hline
+Kịch bản 2: Giảm CK $-5,0\%$ & 10,82\% & 1.304.063,11 ($-2,99\%$) & 177.515,43 ($+62,67\%$) & 13,61\% & \textbf{\texttt{[+] APPROVE:}} Tối ưu hóa lợi nhuận ròng thêm $+68.388,78$ USD. \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{Tích hợp kết quả vào hệ thống hỗ trợ quyết định}
+
+Toàn bộ kết quả từ các mô-đun phân tích được tích hợp thành một luồng khép kín từ cơ sở dữ liệu lên giao diện người dùng cuối. Cụ thể, sau khi các kịch bản \texttt{src.dss.predictive.run} và \texttt{src.dss.association.run} hoàn tất tính toán, các điểm dự báo chuỗi thời gian và các luật kết hợp giỏ hàng được lưu trữ trực tiếp vào các bảng \texttt{dss.forecast\_result} và \texttt{dss.association\_rule} trong PostgreSQL. Ở tầng dịch vụ, ứng dụng FastAPI (\texttt{src/app/api/main.py}) cung cấp bốn điểm cuối RESTful chuẩn JSON gồm \texttt{GET /api/kpi/summary}, \texttt{POST /api/dss/what-if}, \texttt{GET /api/dss/forecast} và \texttt{GET /api/dss/association-rules} có kiểm tra hợp lệ dữ liệu đầu vào bằng Pydantic.
+
+Ở tầng giao diện điều hành trực tiếp, ứng dụng Streamlit (\texttt{src/app/main.py}) sử dụng cơ chế bộ nhớ đệm \texttt{@st.cache\_data(ttl=60)} để truy vấn trực tiếp dữ liệu từ lược đồ \texttt{gold} và \texttt{dss} lên bốn phân trang chuyên biệt: Phân trang 1 hiển thị bảng điểm KPI toàn cầu, biểu đồ trục kép Doanh thu -- Lợi nhuận qua 48 tháng và cảnh báo vùng rủi ro; Phân trang 2 cung cấp giao diện tương tác thời gian thực với các thanh trượt điều chỉnh chiết khấu và hệ số co giãn cầu $e$, tự động nạp số liệu gốc từ PostgreSQL theo từng thị trường/ngành hàng và hiển thị biểu đồ đối chiếu cùng khuyến nghị phê duyệt/từ chối; Phân trang 3 vẽ đồ thị chuỗi thời gian 48 tháng lịch sử nối tiếp với 6 tháng dự báo tương lai kèm vùng tô màu khoảng tin cậy 95\%; và Phân trang 4 cung cấp công cụ tra cứu, lọc động các luật kết hợp theo ngưỡng Lift để gợi ý tạo gói combo khuyến mãi ngay tại giỏ hàng. Song song đó, tiện ích \texttt{src/app/export\_for\_powerbi.py} và bộ mã nguồn DAX/Power Query M trong \texttt{reports/powerbi/} cho phép đồng bộ toàn bộ 6 bảng tầng Gold và 2 bảng tầng DSS sang báo cáo quản trị Power BI Desktop.
