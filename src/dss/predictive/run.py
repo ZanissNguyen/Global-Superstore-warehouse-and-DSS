@@ -1,178 +1,165 @@
-"""
-DSS Predictive Analytics Pipeline
-Performs time series sales and demand forecasting, evaluates error metrics,
-and persists predictions to dss.forecast_run and dss.forecast_result.
-"""
+"""Monthly Gold sales forecasting with chronological backtests."""
 
 import argparse
-from datetime import datetime
-import pandas as pd
+import json
+
 import numpy as np
+import pandas as pd
+from sqlalchemy import text
 
 from src.pipeline.database import create_db_engine
-from src.pipeline.executor import query_sql, execute_sql
+from src.pipeline.executor import query_sql
+
 
 def extract_sales_series(engine):
-    sql = """
-    SELECT 
-        d.year_month,
-        MIN(d.full_date) AS month_date,
-        SUM(f.sales) AS total_sales,
-        SUM(f.quantity) AS total_quantity
-    FROM gold.fact_sales f
-    JOIN gold.dim_date d ON f.order_date_key = d.date_key
-    GROUP BY d.year, d.month, d.year_month
-    ORDER BY d.year, d.month;
-    """
-    try:
-        df = query_sql(engine, sql)
-        if not df.empty:
-            return df
-    except Exception as e:
-        print(f"Warning: Could not query Gold directly ({e}). Using historical Global Superstore monthly series.")
+    df = query_sql(engine, """
+        SELECT date_trunc('month', d.full_date)::date AS month_date,
+               MAX(d.full_date) AS last_order_date,
+               SUM(f.sales)::float AS total_sales,
+               SUM(f.quantity)::float AS total_quantity
+        FROM gold.fact_sales f
+        JOIN gold.dim_date d ON d.date_key = f.order_date_key
+        GROUP BY 1 ORDER BY 1
+    """)
+    if df.empty:
+        raise ValueError("Gold chưa có dữ liệu để dự báo.")
+    dates = pd.to_datetime(df.month_date)
+    if len(pd.date_range(dates.iloc[0], dates.iloc[-1], freq="MS")) != len(df):
+        raise ValueError("Chuỗi tháng có khoảng trống; cần xử lý trước khi dự báo.")
+    return df
 
-    # 48-month canonical Global Superstore monthly sales
-    dates = pd.date_range("2011-01-01", periods=48, freq="MS")
-    # Base growth trend + seasonality
-    np.random.seed(42)
-    trend = np.linspace(80000, 320000, 48)
-    seasonality = np.sin(np.linspace(0, 8 * np.pi, 48)) * 30000
-    noise = np.random.normal(0, 10000, 48)
-    sales = np.maximum(50000, trend + seasonality + noise)
-    
-    return pd.DataFrame({
-        "year_month": dates.strftime("%Y-%m"),
-        "month_date": dates,
-        "total_sales": sales,
-        "total_quantity": sales / 75.0
-    })
+
+def _seasonal_naive(values, horizon):
+    return np.array([values[-12 + h % 12] for h in range(horizon)], dtype=float)
+
+
+def _ets(values, horizon, alpha, beta, gamma):
+    values = np.asarray(values, dtype=float)
+    if len(values) < 24:
+        raise ValueError("Holt-Winters cần ít nhất 24 tháng lịch sử.")
+    level = float(np.mean(values[:12]))
+    trend = float((np.mean(values[12:24]) - level) / 12)
+    season = (values[:12] - level).astype(float).copy()
+    fitted = []
+    for i, actual in enumerate(values):
+        old = level
+        seasonal = season[i % 12]
+        fitted.append(level + trend + seasonal)
+        level = alpha * (actual - seasonal) + (1 - alpha) * (level + trend)
+        trend = beta * (level - old) + (1 - beta) * trend
+        season[i % 12] = gamma * (actual - level) + (1 - gamma) * seasonal
+    future = [level + (h + 1) * trend + season[(len(values) + h) % 12]
+              for h in range(horizon)]
+    return np.maximum(0, future), np.asarray(fitted)
+
+
+def _fit_ets(values, horizon):
+    best = None
+    for alpha in (0.1, 0.3, 0.5, 0.7, 0.9):
+        for beta in (0.1, 0.3, 0.5):
+            for gamma in (0.1, 0.3, 0.5):
+                pred, fitted = _ets(values, horizon, alpha, beta, gamma)
+                score = float(np.mean(np.abs(values[12:] - fitted[12:])))
+                if best is None or score < best[0]:
+                    best = (score, pred, (alpha, beta, gamma))
+    return best[1], best[2]
+
 
 def fit_forecast(df, target_col="total_sales", horizon=6):
-    series = df[target_col].astype(float).values
-    n = len(series)
-    train_size = int(n * 0.75)
-    train, test = series[:train_size], series[train_size:]
-
-    # Moving Average Baseline (window=3)
-    ma_pred = [np.mean(series[max(0, i-3):i]) for i in range(train_size, n)]
-    
-    # Simple Exponential Smoothing
-    alpha = 0.4
-    smoothed = [series[0]]
-    for t in range(1, n):
-        smoothed.append(alpha * series[t] + (1 - alpha) * smoothed[-1])
-    
-    test_pred = smoothed[train_size:]
-    mae = float(np.mean(np.abs(test - test_pred)))
-    rmse = float(np.sqrt(np.mean((test - test_pred) ** 2)))
-    mape = float(np.mean(np.abs((test - test_pred) / test)) * 100)
-
-    # Future forecast
-    last_val = smoothed[-1]
-    # monthly slope
-    slope = (smoothed[-1] - smoothed[0]) / n
-    future_preds = []
-    lower_bounds = []
-    upper_bounds = []
-
-    month_dates = pd.to_datetime(df["month_date"])
-    last_date = month_dates.iloc[-1]
-    future_dates = pd.date_range(last_date + pd.DateOffset(months=1), periods=horizon, freq="MS")
-
-    std_err = float(np.std(test - test_pred))
-    for h in range(1, horizon + 1):
-        pred = last_val + slope * h
-        future_preds.append(float(pred))
-        lower_bounds.append(float(max(0, pred - 1.96 * std_err)))
-        upper_bounds.append(float(pred + 1.96 * std_err))
-
+    if horizon not in (3, 6):
+        raise ValueError("Chỉ hỗ trợ chân trời 3 hoặc 6 tháng.")
+    values = df[target_col].astype(float).to_numpy()
+    n = len(values)
+    if n < 30:
+        raise ValueError("Cần ít nhất 30 tháng lịch sử để backtest.")
+    origins = [i for i in (n - 18, n - 12, n - 6) if i >= 24]
+    errors = {"Seasonal naive": [], "Holt-Winters additive": []}
+    actuals = []
+    for origin in origins:
+        train = values[:origin]
+        actual = values[origin:origin + horizon]
+        actuals.extend(actual)
+        errors["Seasonal naive"].append(actual - _seasonal_naive(train, horizon))
+        ets_pred, _ = _fit_ets(train, horizon)
+        errors["Holt-Winters additive"].append(actual - ets_pred)
+    model = min(errors, key=lambda name: np.mean(np.abs(np.concatenate(errors[name]))))
+    residuals = np.stack(errors[model])
+    future, params = (_seasonal_naive(values, horizon), {}) if model == "Seasonal naive" else _fit_ets(values, horizon)
+    if model != "Seasonal naive":
+        params = dict(zip(("alpha", "beta", "gamma"), params))
+    flat = residuals.ravel()
+    dates = pd.to_datetime(df.month_date)
+    future_dates = pd.date_range(dates.iloc[-1] + pd.DateOffset(months=1), periods=horizon, freq="MS")
+    widths = np.max(np.abs(residuals), axis=0)
     return {
-        "train_start": str(month_dates.iloc[0].date()),
-        "train_end": str(month_dates.iloc[train_size - 1].date()),
-        "test_start": str(month_dates.iloc[train_size].date()),
-        "test_end": str(month_dates.iloc[-1].date()),
-        "mae": mae,
-        "rmse": rmse,
-        "mape": mape,
-        "future_dates": future_dates,
-        "future_preds": future_preds,
-        "lower_bounds": lower_bounds,
-        "upper_bounds": upper_bounds
+        "model_name": model, "params": params, "horizon": horizon,
+        "train_start": dates.iloc[0].date(), "train_end": dates.iloc[origins[0] - 1].date(),
+        "history_end": pd.Timestamp(df.last_order_date.iloc[-1]).date(),
+        "test_start": dates.iloc[origins[0]].date(), "test_end": dates.iloc[-1].date(),
+        "mae": float(np.mean(np.abs(flat))), "rmse": float(np.sqrt(np.mean(flat ** 2))),
+        "mape": float(np.mean(np.abs(flat) / np.maximum(np.abs(actuals), 1)) * 100),
+        "wmape": float(np.sum(np.abs(flat)) / max(np.sum(np.abs(actuals)), 1) * 100),
+        "future_dates": future_dates, "future_preds": future.tolist(),
+        "lower_bounds": np.maximum(0, future - widths).tolist(),
+        "upper_bounds": (future + widths).tolist(),
     }
 
-def persist_forecast(engine, target_metric, results):
-    try:
-        insert_run_sql = """
-        INSERT INTO dss.forecast_run (
-            model_name, target_metric, series_key, train_start, train_end,
-            test_start, test_end, mae, rmse, mape
-        ) VALUES (
-            'Exponential Smoothing with Trend', :target_metric, 'TOTAL',
-            :train_start, :train_end, :test_start, :test_end, :mae, :rmse, :mape
-        ) RETURNING run_id;
-        """
-        run_res = execute_sql(engine, insert_run_sql, {
-            "target_metric": target_metric,
-            "train_start": results["train_start"],
-            "train_end": results["train_end"],
-            "test_start": results["test_start"],
-            "test_end": results["test_end"],
-            "mae": results["mae"],
-            "rmse": results["rmse"],
-            "mape": results["mape"]
-        })
-        run_id = run_res["return"][0]["run_id"] if run_res and run_res.get("return") else 1
 
-        insert_res_sql = """
-        INSERT INTO dss.forecast_result (
-            run_id, forecast_date, series_key, predicted_value, lower_bound, upper_bound
-        ) VALUES (
-            :run_id, :forecast_date, 'TOTAL', :predicted_value, :lower_bound, :upper_bound
-        );
-        """
-        for dt, p, lb, ub in zip(results["future_dates"], results["future_preds"], results["lower_bounds"], results["upper_bounds"]):
-            execute_sql(engine, insert_res_sql, {
-                "run_id": run_id,
-                "forecast_date": dt.date(),
-                "predicted_value": p,
-                "lower_bound": lb,
-                "upper_bound": ub
-            })
-        print(f"Persisted forecast run #{run_id} to dss schema successfully.")
-    except Exception as e:
-        print(f"Notice: Database persist skipped ({e}). Showing results on console.")
+def persist_forecast(engine, target_metric, result):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS horizon_months INTEGER;
+            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS wmape NUMERIC(10, 4);
+            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS model_params JSONB;
+            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS history_end DATE;
+        """))
+        run_id = conn.execute(text("""
+            INSERT INTO dss.forecast_run
+                (model_name, target_metric, series_key, train_start, train_end,
+                 test_start, test_end, mae, rmse, mape, horizon_months, wmape, model_params,
+                 history_end)
+            VALUES (:model, :target, 'TOTAL', :train_start, :train_end,
+                    :test_start, :test_end, :mae, :rmse, :mape, :horizon, :wmape,
+                    CAST(:params AS JSONB), :history_end) RETURNING run_id
+        """), {"model": result["model_name"], "target": target_metric,
+                "train_start": result["train_start"], "train_end": result["train_end"],
+                "test_start": result["test_start"], "test_end": result["test_end"],
+                "mae": result["mae"], "rmse": result["rmse"], "mape": result["mape"],
+                "horizon": result["horizon"], "wmape": result["wmape"],
+                "params": json.dumps(result["params"]),
+                "history_end": result["history_end"]}).scalar_one()
+        for dt, pred, low, high in zip(result["future_dates"], result["future_preds"],
+                                       result["lower_bounds"], result["upper_bounds"]):
+            conn.execute(text("""
+                INSERT INTO dss.forecast_result
+                    (run_id, forecast_date, series_key, predicted_value, lower_bound, upper_bound)
+                VALUES (:run_id, :dt, 'TOTAL', :pred, :low, :high)
+            """), {"run_id": run_id, "dt": dt.date(), "pred": float(pred),
+                    "low": float(low), "high": float(high)})
+    return run_id
+
+
+def run_forecasts(engine):
+    df = extract_sales_series(engine)
+    return {h: persist_forecast(engine, "sales", fit_forecast(df, horizon=h))
+            for h in (3, 6)}
+
 
 def main():
-    parser = argparse.ArgumentParser(description="DSS Forecasting Pipeline")
-    parser.add_argument("--target", type=str, default="sales", choices=["sales", "quantity"])
-    parser.add_argument("--horizon", type=int, default=6)
+    parser = argparse.ArgumentParser(description="Forecast monthly Gold sales")
+    parser.add_argument("--target", choices=("sales", "quantity"), default="sales")
+    parser.add_argument("--horizon", type=int, choices=(3, 6), default=6)
     args = parser.parse_args()
-
     engine = create_db_engine()
-    print("=" * 60)
-    print(f"RUNNING DSS FORECASTING: Target={args.target.upper()} | Horizon={args.horizon} Months")
-    print("=" * 60)
+    try:
+        df = extract_sales_series(engine)
+        target = "total_sales" if args.target == "sales" else "total_quantity"
+        result = fit_forecast(df, target, args.horizon)
+        run_id = persist_forecast(engine, args.target, result)
+        print(f"Forecast run #{run_id}: {result['model_name']}, MAE={result['mae']:.2f}")
+    finally:
+        engine.dispose()
 
-    df = extract_sales_series(engine)
-    target_col = "total_sales" if args.target == "sales" else "total_quantity"
-    res = fit_forecast(df, target_col=target_col, horizon=args.horizon)
-
-    print(f"Model: Exponential Smoothing with Linear Trend")
-    print(f"Evaluation Metrics on Test Set:")
-    print(f"  - MAE:  ${res['mae']:,.2f}")
-    print(f"  - RMSE: ${res['rmse']:,.2f}")
-    print(f"  - MAPE: {res['mape']:.2f}%")
-    print("\nFuture Predictions:")
-    for dt, p, lb, ub in zip(res["future_dates"], res["future_preds"], res["lower_bounds"], res["upper_bounds"]):
-        print(f"  {dt.strftime('%Y-%m-%d')}: ${p:,.2f} [95% CI: ${lb:,.2f} - ${ub:,.2f}]")
-
-    persist_forecast(engine, args.target, res)
-    print("=" * 60)
 
 if __name__ == "__main__":
-    import sys
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
     main()
