@@ -12,9 +12,9 @@ mọi tab đọc database demo mới. Tiêu đề UI cho biết mã phiên và t
 
 | Tab | Nội dung chính | Nguồn và cách tính |
 |---|---|---|
-| **Tổng quan kinh doanh** | Doanh thu, lợi nhuận, biên lợi nhuận, số đơn, chiết khấu bình quân; xu hướng theo thời gian; ngành hàng; nhóm có lợi nhuận âm; top sản phẩm và tỷ trọng ngành hàng. | Truy vấn `gold.fact_sales` và các dimension theo **cùng khoảng ngày đặt hàng**. YoY so với cùng kỳ năm trước khi đủ dữ liệu. |
+| **Tổng quan kinh doanh** | KPI và xu hướng; hiệu quả theo thị trường/khu vực/quốc gia; ba phân khúc khách hàng; ngành hàng, ngành hàng con và nhóm lỗ; top sản phẩm và tỷ trọng ngành hàng. | Truy vấn `gold.fact_sales` và các dimension theo **cùng khoảng ngày đặt hàng và phạm vi địa lý**. YoY so với cùng kỳ năm trước khi đủ dữ liệu. |
 | **Quyết định giá & chiết khấu** | Baseline theo kỳ, thị trường và ngành hàng; thay đổi chiết khấu, độ co giãn; kết quả và khuyến nghị. | Baseline từ Gold. Kết quả là **kịch bản giả định**, tính lại theo tham số người dùng và không ghi vào Gold. Độ co giãn chưa được huấn luyện từ dữ liệu. |
-| **Kế hoạch danh thu & dự báo** | Doanh thu lịch sử theo tháng, dự báo 3 hoặc 6 tháng, khoảng sai số, MAE/RMSE/MAPE/WMAPE và thông tin run. | Lịch sử từ Gold; dự báo và sai số từ **cùng một run** trong `dss.forecast_run` và `dss.forecast_result` của phiên đang hoạt động. |
+| **Kế hoạch danh thu & dự báo** | Doanh thu lịch sử theo tháng, dự báo cố định 6 tháng, khoảng sai số, MAE/RMSE/MAPE/WMAPE và thông tin run. | Lịch sử từ Gold; dự báo và sai số từ **cùng một run** trong `dss.forecast_run` và `dss.forecast_result` của phiên đang hoạt động. |
 | **Cơ hội bán kèm** | Luật mua kèm, support, confidence, lift, số giao dịch hỗ trợ ước tính; tìm sản phẩm và lọc lift. | Đọc `dss.association_run` và toàn bộ luật đã lưu trong `dss.association_rule` của run đang hoạt động. |
 | **Nạp dữ liệu & đối soát** | Xem trước CSV, chạy ETL, theo dõi bước xử lý, đối soát trước/sau/chênh lệch, xem lịch sử phiên và quay về dữ liệu nền. | File đang xem trước chưa thay đổi Gold; chỉ phiên hoàn tất mới được kích hoạt. |
 
@@ -25,13 +25,24 @@ mọi tab đọc database demo mới. Tiêu đề UI cho biết mã phiên và t
 - **Đơn vị xu hướng:** 1 tuần → ngày; 30/90 ngày và 1 năm → tuần hoặc tháng;
   Toàn bộ → tháng. Kỳ Tùy chọn chỉ cho chọn đơn vị phù hợp độ dài kỳ.
   Với Tùy chọn, ngày bắt đầu phải trước ngày kết thúc.
+- **Địa lý:** thị trường → khu vực → quốc gia. Các lựa chọn khu vực/quốc gia
+  chỉ hiện khi cấp cha đã chọn và tự đặt lại khi cấp cha hoặc kỳ thời gian đổi.
+  Phạm vi địa lý áp dụng đồng thời cho KPI, xu hướng, ngành hàng, phân khúc,
+  cảnh báo và top sản phẩm. Biểu đồ địa lý đi sâu theo cấp đang chọn.
+- **Phân khúc:** Consumer, Corporate, Home Office; so sánh doanh thu, lợi nhuận,
+  biên lợi nhuận, số khách hàng, số đơn và doanh thu trên mỗi đơn. Không có RFM.
+- **Danh mục:** xem ngành hàng và ngành hàng con; nhóm ngành hàng con lỗ cần
+  ít nhất 3 đơn trong kỳ. Không bổ sung drill-down xuống SKU.
 - **Top sản phẩm:** chọn ngành hàng, xếp theo số lượng hoặc doanh thu,
   và chọn **5–10 sản phẩm** (mặc định 7). Biểu đồ thanh thể hiện sản phẩm;
   biểu đồ quạt thể hiện tỷ trọng **các ngành hàng** theo cùng kỳ và cùng thước đo.
   Bảng chi tiết top sản phẩm đã được bỏ.
+- **Biên lợi nhuận (%)** = `SUM(profit) / SUM(sales) × 100` trong phạm vi đã chọn.
+  **Tỷ trọng (share %)** là phần đóng góp của nhóm vào tổng doanh thu hoặc
+  số lượng trong cùng phạm vi; hai chỉ số có ý nghĩa khác nhau.
 
 Tab What-If có bộ lọc kỳ riêng cho baseline. Tab Dự báo chỉ chọn **số tháng lịch sử
-hiển thị** (12/24/48/toàn bộ) và **chân trời dự báo** (3/6 tháng); dự báo luôn theo tháng.
+hiển thị** (12/24/48/toàn bộ); dự báo luôn theo tháng và hiển thị 6 tháng tiếp theo.
 
 ## 2. Nạp file demo và đổi phiên
 
@@ -69,8 +80,10 @@ Pipeline dự báo tổng hợp doanh thu Gold theo **tháng**, so sánh seasona
 được chọn từ dữ liệu huấn luyện; mô hình được so sánh bằng backtest theo thứ tự
 thời gian, riêng cho chân trời 3 và 6 tháng. Kết quả, tham số và sai số được lưu
 theo `run_id`. Khoảng sai số trên biểu đồ lấy từ các lần backtest theo từng tháng
-dự báo; **chưa phải khoảng tin cậy 95%**. Run cũ ở database nền có thể dùng cách
-dự báo trước đây và được UI gắn cảnh báo.
+dự báo; **chưa phải khoảng tin cậy 95%**. UI chỉ dùng run theo phương pháp mới
+và đúng dữ liệu hiện tại. Nếu database nền chỉ có run cũ, UI tạo run mới một lần
+rồi đọc kết quả đã lưu ở các lần tải trang sau. File upload cũng chạy cùng
+pipeline trước khi kích hoạt phiên demo.
 
 Tab bán kèm khai phá **cặp sản phẩm** xuất hiện trong cùng đơn, tính support,
 confidence và lift rồi lưu theo `run_id`. “Số luật phát hiện” lấy từ metadata

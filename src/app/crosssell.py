@@ -37,10 +37,10 @@ def render_crosssell_tab(database):
     a.metric("Số giao dịch phân tích", f"{int(meta.transaction_count):,}")
     b.metric("Số luật phát hiện", f"{int(meta.rules_found):,}")
     c.metric("Số luật lưu trong DB", f"{len(rules):,}")
-    st.caption(f"Run #{int(meta.run_id)} · {meta.algorithm} · "
-               f"support ≥ {float(meta.min_support):.4f}, "
-               f"confidence ≥ {float(meta.min_confidence):.2f}, "
-               f"lift ≥ {float(meta.min_lift):.2f}.")
+    st.caption(f"Lần chạy {int(meta.run_id)}, {meta.algorithm}. "
+               f"Support tối thiểu {float(meta.min_support):.4f}, "
+               f"confidence tối thiểu {float(meta.min_confidence):.2f}, "
+               f"lift tối thiểu {float(meta.min_lift):.2f}.")
     if len(rules) != int(meta.rules_found):
         st.info("Run cũ chỉ lưu một phần luật; số luật phát hiện và số luật xem được khác nhau.")
     if rules.empty:
@@ -56,16 +56,16 @@ def render_crosssell_tab(database):
         matching = filtered.antecedent_names.str.contains(keyword, case=False, na=False, regex=False)
         matching |= filtered.consequent_names.str.contains(keyword, case=False, na=False, regex=False)
         filtered = filtered[matching]
-    filtered["Số giao dịch hỗ trợ (ước tính)"] = (
+    filtered["Số giao dịch hỗ trợ ước tính"] = (
         filtered.support * int(meta.transaction_count)).round().astype(int)
-    filtered["Support (%)"] = (filtered.support * 100).round(3)
-    filtered["Confidence (%)"] = (filtered.confidence * 100).round(2)
+    filtered["Support phần trăm"] = (filtered.support * 100).round(3)
+    filtered["Confidence phần trăm"] = (filtered.confidence * 100).round(2)
     filtered["Lift"] = filtered.lift.round(2)
     st.dataframe(filtered[[
-        "antecedent_names", "consequent_names", "Số giao dịch hỗ trợ (ước tính)",
-        "Support (%)", "Confidence (%)", "Lift"
+        "antecedent_names", "consequent_names", "Số giao dịch hỗ trợ ước tính",
+        "Support phần trăm", "Confidence phần trăm", "Lift"
     ]].rename(columns={"antecedent_names": "Sản phẩm mua",
                        "consequent_names": "Gợi ý bán kèm"}),
         hide_index=True, width="stretch")
-    st.caption(f"Hiển thị {len(filtered):,}/{len(rules):,} luật lưu trong DB. "
+    st.caption(f"Hiển thị {len(filtered):,} trên {len(rules):,} luật lưu trong DB. "
                "Số giao dịch hỗ trợ được ước tính từ support đã làm tròn.")
