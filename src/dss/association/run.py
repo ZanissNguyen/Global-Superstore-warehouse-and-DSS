@@ -1,16 +1,16 @@
 """
 DSS Association Rule Mining Pipeline (Market Basket Analysis)
-Discovers frequently co-purchased products in orders using Apriori / FP-Growth,
+Discovers frequently co-purchased product pairs in orders,
 evaluates Support, Confidence, Lift, and persists to dss schema.
 """
 
 import argparse
-import pandas as pd
+from sqlalchemy import text
 from collections import defaultdict
 from itertools import combinations
 
 from src.pipeline.database import create_db_engine
-from src.pipeline.executor import query_sql, execute_sql
+from src.pipeline.executor import query_sql
 
 def extract_baskets(engine, level="product"):
     column_name = "p.product_name" if level == "product" else "p.sub_category"
@@ -22,29 +22,7 @@ def extract_baskets(engine, level="product"):
     JOIN gold.dim_product p ON f.product_key = p.product_key
     ORDER BY f.order_id;
     """
-    try:
-        df = query_sql(engine, sql)
-        if not df.empty:
-            return df
-    except Exception as e:
-        print(f"Notice: Fact table not ready ({e}). Using canonical basket transactions.")
-
-    # High-quality canonical co-purchased products from Superstore
-    sample_baskets = []
-    for i in range(1, 301):
-        order_id = f"ORD-{i:04d}"
-        if i % 3 == 0:
-            sample_baskets.append({"order_id": order_id, "item_name": "Fellowes Bankers Box"})
-            sample_baskets.append({"order_id": order_id, "item_name": "Tenex File Folders"})
-        elif i % 5 == 0:
-            sample_baskets.append({"order_id": order_id, "item_name": "Hewlett-Packard Copy Paper"})
-            sample_baskets.append({"order_id": order_id, "item_name": "Wilson Jones Binders"})
-        elif i % 7 == 0:
-            sample_baskets.append({"order_id": order_id, "item_name": "Apple Smart Phone"})
-            sample_baskets.append({"order_id": order_id, "item_name": "Belkin Screen Protector"})
-        else:
-            sample_baskets.append({"order_id": order_id, "item_name": "Sanford Highlighters"})
-    return pd.DataFrame(sample_baskets)
+    return query_sql(engine, sql)
 
 def mine_association_rules(df, min_support=0.0001, min_confidence=0.10, min_lift=1.2, min_count=2):
     # Group items by order_id
@@ -98,45 +76,31 @@ def mine_association_rules(df, min_support=0.0001, min_confidence=0.10, min_lift
     return total_tx, rules
 
 def persist_rules(engine, total_tx, rules, min_support, min_confidence, min_lift):
-    try:
-        insert_run = """
-        INSERT INTO dss.association_run (
-            algorithm, min_support, min_confidence, min_lift, transaction_count, rules_found
-        ) VALUES (
-            'Apriori Association Mining', :min_supp, :min_conf, :min_lift, :tx_cnt, :rules_cnt
-        ) RETURNING run_id;
-        """
-        run_res = execute_sql(engine, insert_run, {
-            "min_supp": min_support,
-            "min_conf": min_confidence,
-            "min_lift": min_lift,
-            "tx_cnt": total_tx,
-            "rules_cnt": len(rules)
-        })
-        run_id = run_res["return"][0]["run_id"] if run_res and run_res.get("return") else 1
-
-        insert_rule = """
-        INSERT INTO dss.association_rule (
-            run_id, antecedents, consequents, antecedent_names, consequent_names,
-            support, confidence, lift
-        ) VALUES (
-            :run_id, :ant, :con, :ant_name, :con_name, :supp, :conf, :lift
-        );
-        """
-        for r in rules[:50]:
-            execute_sql(engine, insert_rule, {
-                "run_id": run_id,
-                "ant": r["antecedent"][:20],
-                "con": r["consequent"][:20],
-                "ant_name": r["antecedent"],
-                "con_name": r["consequent"],
-                "supp": r["support"],
-                "conf": r["confidence"],
-                "lift": r["lift"]
-            })
-        print(f"Persisted {len(rules)} association rules to dss schema under run #{run_id}.")
-    except Exception as e:
-        print(f"Notice: Database persist skipped ({e}). Showing rules on console.")
+    with engine.begin() as conn:
+        run_id = conn.execute(text("""
+            INSERT INTO dss.association_run (
+                algorithm, min_support, min_confidence, min_lift, transaction_count, rules_found
+            ) VALUES (
+                'Pairwise association mining', :min_supp, :min_conf, :min_lift, :tx_cnt, :rules_cnt
+            ) RETURNING run_id
+        """), {"min_supp": min_support, "min_conf": min_confidence,
+               "min_lift": min_lift, "tx_cnt": total_tx,
+               "rules_cnt": len(rules)}).scalar_one()
+        if rules:
+            conn.execute(text("""
+                INSERT INTO dss.association_rule (
+                    run_id, antecedents, consequents, antecedent_names, consequent_names,
+                    support, confidence, lift
+                ) VALUES (
+                    :run_id, :ant, :con, :ant_name, :con_name, :supp, :conf, :lift
+                )
+            """), [{"run_id": run_id, "ant": r["antecedent"][:20],
+                    "con": r["consequent"][:20],
+                    "ant_name": r["antecedent"], "con_name": r["consequent"],
+                    "supp": r["support"], "conf": r["confidence"],
+                    "lift": r["lift"]} for r in rules])
+    print(f"Persisted {len(rules)} association rules to dss schema under run #{run_id}.")
+    return run_id
 
 def main():
     parser = argparse.ArgumentParser(description="Market Basket Analysis")

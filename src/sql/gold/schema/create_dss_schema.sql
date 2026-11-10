@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS dss.forecast_run (
     mae NUMERIC(12, 4),
     rmse NUMERIC(12, 4),
     mape NUMERIC(8, 4),
+    horizon_months INTEGER,
+    wmape NUMERIC(10, 4),
+    model_params JSONB,
+    history_end DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

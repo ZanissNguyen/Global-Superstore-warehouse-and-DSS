@@ -16,33 +16,33 @@ def fetch_baseline_from_db(market: Optional[str] = None, category: Optional[str]
     """
     Fetch baseline sales, profit, and avg discount from Gold schema fact and dimensions.
     """
+    from src.pipeline.database import create_db_engine
+    from src.pipeline.executor import query_sql
+    engine = create_db_engine()
     try:
-        from src.pipeline.database import create_db_engine
-        from src.pipeline.executor import query_sql
-        engine = create_db_engine()
-        where_clauses = []
-        if market and market.strip() and market.lower() != "all":
-            where_clauses.append(f"g.market = '{market.strip()}'")
-        if category and category.strip() and category.lower() != "all":
-            where_clauses.append(f"p.category = '{category.strip()}'")
-        where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-        
-        sql = f"""
+        sql = """
         SELECT 
             COALESCE(SUM(f.sales), 0) AS total_sales,
             COALESCE(SUM(f.profit), 0) AS total_profit,
-            COALESCE(AVG(f.discount), 0.15) AS avg_discount
+            COALESCE(AVG(f.discount), 0) AS avg_discount
         FROM gold.fact_sales f
         JOIN gold.dim_geography g ON f.geography_key = g.geography_key
         JOIN gold.dim_product p ON f.product_key = p.product_key
-        {where_str};
+        WHERE (:market IS NULL OR g.market = :market)
+          AND (:category IS NULL OR p.category = :category);
         """
-        df = query_sql(engine, sql)
-        if not df.empty and float(df.iloc[0]["total_sales"]) > 0:
-            return float(df.iloc[0]["total_sales"]), float(df.iloc[0]["total_profit"]), float(df.iloc[0]["avg_discount"])
-    except Exception:
-        pass
-    return 1000000.0, 120000.0, 0.15
+        params = {
+            "market": market.strip() if market and market.lower() != "all" else None,
+            "category": category.strip() if category and category.lower() != "all" else None,
+        }
+        df = query_sql(engine, sql, params)
+        row = df.iloc[0]
+        if float(row["total_sales"]) <= 0:
+            raise ValueError("Không có doanh thu Gold trong bộ lọc đã chọn.")
+        return (float(row["total_sales"]), float(row["total_profit"]),
+                float(row["avg_discount"]))
+    finally:
+        engine.dispose()
 
 def run_what_if_simulation(
     baseline_sales: float,
