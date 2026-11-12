@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from src.app.demo_backend import active_session
 from src.pipeline.database import create_db_engine
+from src.pipeline.reader import read_sql
 
 
 def render_crosssell_tab(database):
@@ -15,22 +16,14 @@ def render_crosssell_tab(database):
     engine = create_db_engine(database=database)
     try:
         if run_id is None:
-            run = pd.read_sql(text("""
-                SELECT * FROM dss.association_run ORDER BY run_id DESC LIMIT 1
-            """), engine)
+            run = pd.read_sql(text(read_sql("dss/association/latest_run.sql")), engine)
         else:
-            run = pd.read_sql(text("""
-                SELECT * FROM dss.association_run WHERE run_id=:run_id
-            """), engine, params={"run_id": run_id})
+            run = pd.read_sql(text(read_sql("dss/association/run_by_id.sql")), engine, params={"run_id": run_id})
         if run.empty:
             st.warning("Chưa có lần khai phá luật bán kèm.")
             return
         meta = run.iloc[0]
-        rules = pd.read_sql(text("""
-            SELECT antecedent_names, consequent_names, support::float AS support,
-                   confidence::float AS confidence, lift::float AS lift
-            FROM dss.association_rule WHERE run_id=:run_id ORDER BY lift DESC
-        """), engine, params={"run_id": int(meta.run_id)})
+        rules = pd.read_sql(text(read_sql("dss/association/rules_by_run.sql")), engine, params={"run_id": int(meta.run_id)})
     finally:
         engine.dispose()
     a, b, c = st.columns(3)

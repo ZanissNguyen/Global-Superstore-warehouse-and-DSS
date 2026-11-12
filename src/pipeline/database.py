@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, Engine
+from src.pipeline.reader import read_sql
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +25,7 @@ def database_scope(database: str):
         _database_override.reset(token)
 
 
-def create_db_engine(database: str | None = None) -> Engine:
+def create_db_engine(database: str | None = None, connect_timeout: int | None = None) -> Engine:
     """
     Create SQLAlchemy engine with connection pooling.
     """
@@ -38,8 +39,10 @@ def create_db_engine(database: str | None = None) -> Engine:
         database=database or _database_override.get() or os.getenv("DB_NAME"),
     )
 
+    engine_options = {"connect_args": {"connect_timeout": connect_timeout}} if connect_timeout else {}
     engine = create_engine(
         connection_url,
+        **engine_options,
 
         # Connection pool
         pool_size=5,
@@ -61,7 +64,7 @@ def test_connection(engine: Engine) -> bool:
 
     try:
         with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+            connection.execute(text(read_sql("system/ping.sql")))
 
         return True
 

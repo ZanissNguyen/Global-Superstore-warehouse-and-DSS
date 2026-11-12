@@ -1,5 +1,13 @@
 # Kế hoạch chuẩn hoá bộ truy vấn OLAP cho trang "Tổng quan kinh doanh"
 
+> **Cập nhật triển khai:** SQL phục vụ UI đã nằm trong `src/sql/gold/dashboard/`
+> và được `src/app/executive.py` đọc bằng `read_sql()`. Bảy ví dụ
+> `src/sql/gold/marts/olap_*.sql` đã nhận tham số ngày/địa lý;
+> `run_olap_suite.py` có `--check-dashboard` để đối chiếu các tổng doanh thu,
+> lợi nhuận với KPI. Các ví dụ Pivot, MoM và Cube vẫn không phải chart UI.
+> Những phần bên dưới mô tả khảo sát và thiết kế ban đầu; các nhận định rằng
+> dashboard còn chứa SQL inline hoặc OLAP mẫu còn hardcode đã cũ.
+
 > **Phạm vi:** chỉ trang tổng quan (`src/app/executive.py`, tab `Tổng quan kinh doanh` trong `src/app/main.py`).
 > **Loại trừ:** `whatif.py` (Quyết định giá), `forecast.py` (dự báo), `crosssell.py` (association rule), `upload.py`.
 > **Nguồn khảo sát:** `src/app/executive.py`, `src/sql/gold/marts/*.sql`, `src/sql/gold/marts/create_materialized_views.sql`, `src/sql/gold/schema/*`, `src/sql/gold/marts/run_olap_suite.py`.

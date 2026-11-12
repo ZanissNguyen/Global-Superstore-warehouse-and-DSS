@@ -36,7 +36,9 @@ uvicorn src.app.api.main:app --reload --port 8000
 Interactive Swagger documentation is available at `http://localhost:8000/docs`.
 
 Endpoints:
-- `GET /api/health`: Healthcheck.
+- `GET /api/health/live`: API process liveness (does not query PostgreSQL).
+- `GET /api/health/ready`: Read-only check of the UI-selected database and required Gold tables; HTTP 503 if unavailable.
+- `GET /api/health`: Backward-compatible alias of the readiness check.
 - `GET /api/kpi/summary`: Executive KPI metrics from Gold layer.
 - `GET /api/olap/sales-trend`: Monthly sales and profit time series.
 - `POST /api/dss/what-if`: What-if discount simulation engine.

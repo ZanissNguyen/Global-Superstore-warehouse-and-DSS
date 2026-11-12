@@ -8,59 +8,32 @@ from sqlalchemy import text
 from src.app.demo_backend import active_session
 from src.dss.predictive.run import run_forecasts
 from src.pipeline.database import create_db_engine
+from src.pipeline.reader import read_sql
 
 
 def _load_forecast(database, selected_run, horizon):
     engine = create_db_engine(database=database)
     try:
-        history = pd.read_sql(text("""
-            SELECT date_trunc('month', d.full_date)::date AS month_date,
-                   SUM(f.sales)::float AS sales,
-                   MAX(d.full_date) AS last_order_date
-            FROM gold.fact_sales f JOIN gold.dim_date d ON d.date_key=f.order_date_key
-            GROUP BY 1 ORDER BY 1
-        """), engine)
+        history = pd.read_sql(text(read_sql("dss/forecast/monthly_history.sql")), engine)
         if history.empty:
             return history, None, pd.DataFrame()
         # Legacy base DB may not have the new metrics yet.
-        has_horizon = pd.read_sql(text("""
-            SELECT COUNT(*) AS n FROM information_schema.columns
-            WHERE table_schema='dss' AND table_name='forecast_run'
-              AND column_name='horizon_months'
-        """), engine).iloc[0]["n"] > 0
-        has_history_end = pd.read_sql(text("""
-            SELECT COUNT(*) AS n FROM information_schema.columns
-            WHERE table_schema='dss' AND table_name='forecast_run'
-              AND column_name='history_end'
-        """), engine).iloc[0]["n"] > 0
+        has_horizon = pd.read_sql(text(read_sql("dss/forecast/has_horizon_column.sql")), engine).iloc[0]["n"] > 0
+        has_history_end = pd.read_sql(text(read_sql("dss/forecast/has_history_end_column.sql")), engine).iloc[0]["n"] > 0
         if not has_horizon:
             return history, None, pd.DataFrame()
-        history_end = "COALESCE(history_end, train_end)" if has_history_end else "train_end"
-        compatible = ("target_metric='sales' AND horizon_months=:horizon "
-                      "AND model_name IN ('Seasonal naive', 'Holt-Winters additive')")
-        if selected_run is None:
-            run = pd.read_sql(text(f"""
-                SELECT run_id, model_name, {history_end} AS data_end,
-                       mae, rmse, mape, wmape, created_at
-                FROM dss.forecast_run
-                WHERE {compatible}
-                ORDER BY run_id DESC LIMIT 1
-            """), engine, params={"horizon": horizon})
-        else:
-            run = pd.read_sql(text(f"""
-                SELECT run_id, model_name, {history_end} AS data_end,
-                       mae, rmse, mape, wmape, created_at
-                FROM dss.forecast_run WHERE run_id=:run_id AND {compatible}
-            """), engine, params={"run_id": selected_run, "horizon": horizon})
+        run_kind = "latest" if selected_run is None else "selected"
+        schema_kind = "history" if has_history_end else "legacy"
+        run_sql = read_sql(f"dss/forecast/{run_kind}_run_{schema_kind}.sql")
+        params = {"horizon": horizon}
+        if selected_run is not None:
+            params["run_id"] = selected_run
+        run = pd.read_sql(text(run_sql), engine, params=params)
         if run.empty:
             return history, None, pd.DataFrame()
         if pd.Timestamp(run.iloc[0]["data_end"]).date() < pd.Timestamp(history.last_order_date.iloc[-1]).date():
             return history, None, pd.DataFrame()
-        result = pd.read_sql(text("""
-            SELECT forecast_date, predicted_value, lower_bound, upper_bound
-            FROM dss.forecast_result WHERE run_id=:run_id AND actual_value IS NULL
-            ORDER BY forecast_date LIMIT :horizon
-        """), engine, params={"run_id": int(run.iloc[0]["run_id"]), "horizon": horizon})
+        result = pd.read_sql(text(read_sql("dss/forecast/future_results.sql")), engine, params={"run_id": int(run.iloc[0]["run_id"]), "horizon": horizon})
         return history, run.iloc[0], result
     finally:
         engine.dispose()

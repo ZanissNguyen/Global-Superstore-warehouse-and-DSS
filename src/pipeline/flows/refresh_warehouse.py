@@ -13,11 +13,7 @@ def refresh_all_marts(dry_run: bool = False, rollback: bool = False):
     print("REFRESHING GOLD DATA MARTS (MATERIALIZED VIEWS)")
     print("=" * 60)
 
-    sql = """
-    REFRESH MATERIALIZED VIEW gold.mv_sales_mart;
-    REFRESH MATERIALIZED VIEW gold.mv_product_mart;
-    REFRESH MATERIALIZED VIEW gold.mv_customer_mart;
-    """
+    sql = read_sql("gold/marts/refresh_all_marts.sql")
     execute_sql(engine, sql, dry_run=dry_run, rollback=rollback)
     print("All Gold Materialized Views refreshed successfully.")
 

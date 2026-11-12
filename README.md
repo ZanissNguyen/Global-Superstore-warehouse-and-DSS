@@ -86,4 +86,4 @@ Các lần chạy demo tạo database `demo_<mã phiên>` riêng trong cùng Pos
 
 Trong pgAdmin chạy bằng Docker, đăng ký server với **host `postgres`**, port `5432`, maintenance database và username theo `DB_NAME` / `DB_USER`, password theo `DB_PASSWORD` trong `.env`.
 
-REST API: `GET /api/health`, `GET /api/kpi/summary`, `GET /api/olap/sales-trend`, `POST /api/dss/what-if`, `GET /api/dss/forecast`, `GET /api/dss/association-rules` (base URL: `http://localhost:8000`).
+REST API: `GET /api/health/live`, `GET /api/health/ready`, `GET /api/health` (cùng kết quả với `ready`), `GET /api/kpi/summary`, `GET /api/olap/sales-trend`, `POST /api/dss/what-if`, `GET /api/dss/forecast`, `GET /api/dss/association-rules` (base URL: `http://localhost:8000`). `ready` kiểm tra database đang được UI chọn và các bảng Gold; khi chưa sẵn sàng trả HTTP 503. Healthcheck không nạp hay sửa dữ liệu.

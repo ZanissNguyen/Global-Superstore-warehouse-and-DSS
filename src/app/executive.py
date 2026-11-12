@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql
+from src.pipeline.reader import read_sql
 
 
 PERIODS = ("Toàn bộ", "1 tuần", "30 ngày", "90 ngày", "1 năm", "Tùy chọn")
@@ -47,31 +48,14 @@ def _scope_params(start: date, end: date, scope: tuple[str | None, str | None, s
             "market": scope[0], "region": scope[1], "country": scope[2]}
 
 
-GEO_FILTER = """
-    AND (:market IS NULL OR g.market = :market)
-    AND (:region IS NULL OR g.region = :region)
-    AND (:country IS NULL OR g.country = :country)
-"""
-
-
 @st.cache_data(ttl=60)
 def load_geo_options(start: date, end: date) -> pd.DataFrame:
-    return _query("""
-        SELECT DISTINCT g.market, g.region, g.country
-        FROM gold.fact_sales f
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-        ORDER BY g.market, g.region, g.country
-    """, _date_params(start, end))
+    return _query(read_sql("gold/dashboard/geo_options.sql"), _date_params(start, end))
 
 
 @st.cache_data(ttl=60)
 def load_order_date_bounds() -> tuple[date, date]:
-    df = _query("""
-        SELECT MIN(d.full_date) AS first_date, MAX(d.full_date) AS last_date
-        FROM gold.fact_sales f
-        JOIN gold.dim_date d ON f.order_date_key = d.date_key;
-    """)
+    df = _query(read_sql("gold/dashboard/order_date_bounds.sql"))
     first, last = df.iloc[0]["first_date"], df.iloc[0]["last_date"]
     if pd.isna(first) or pd.isna(last):
         raise ValueError("Gold chưa có đơn hàng để hiển thị.")
@@ -137,16 +121,7 @@ def prior_year_period(start: date, end: date, first: date) -> tuple[date, date] 
 
 @st.cache_data(ttl=60)
 def load_period_kpis(start: date, end: date, scope=(None, None, None)) -> dict:
-    df = _query("""
-        SELECT COUNT(*) AS line_count,
-               COUNT(DISTINCT order_id) AS order_count,
-               COALESCE(SUM(sales), 0) AS sales,
-               COALESCE(SUM(profit), 0) AS profit,
-               COALESCE(AVG(discount), 0) AS avg_discount
-        FROM gold.fact_sales f
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER, _scope_params(start, end, scope))
+    df = _query(read_sql("gold/dashboard/period_kpis.sql"), _scope_params(start, end, scope))
     row = df.iloc[0]
     sales, profit = float(row["sales"]), float(row["profit"])
     return {
@@ -163,18 +138,7 @@ def load_period_kpis(start: date, end: date, scope=(None, None, None)) -> dict:
 def load_period_trend(start: date, end: date, grain: str, scope=(None, None, None)) -> pd.DataFrame:
     if grain not in GRAINS:
         raise ValueError("Đơn vị thời gian không hợp lệ.")
-    df = _query("""
-        SELECT CAST(date_trunc(:grain, d.full_date) AS date) AS period,
-               COUNT(DISTINCT f.order_id) AS order_count,
-               ROUND(SUM(f.sales), 2) AS sales,
-               ROUND(SUM(f.profit), 2) AS profit
-        FROM gold.fact_sales f
-        JOIN gold.dim_date d ON f.order_date_key = d.date_key
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER + """
-        GROUP BY 1 ORDER BY 1
-    """, {**_scope_params(start, end, scope), "grain": GRAINS[grain]})
+    df = _query(read_sql("gold/dashboard/period_trend.sql"), {**_scope_params(start, end, scope), "grain": GRAINS[grain]})
     if not df.empty:
         df[["sales", "profit"]] = df[["sales", "profit"]].astype(float)
         df["period"] = pd.to_datetime(df["period"])
@@ -183,19 +147,7 @@ def load_period_trend(start: date, end: date, grain: str, scope=(None, None, Non
 
 @st.cache_data(ttl=60)
 def load_period_categories(start: date, end: date, scope=(None, None, None)) -> pd.DataFrame:
-    df = _query("""
-        SELECT p.category AS category,
-               SUM(f.quantity) AS quantity,
-               ROUND(SUM(f.sales), 2) AS sales,
-               ROUND(SUM(f.profit), 2) AS profit,
-               ROUND(SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100, 2) AS margin_pct
-        FROM gold.fact_sales f
-        JOIN gold.dim_product p ON f.product_key = p.product_key
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER + """
-        GROUP BY p.category ORDER BY sales DESC
-    """, _scope_params(start, end, scope))
+    df = _query(read_sql("gold/dashboard/period_categories.sql"), _scope_params(start, end, scope))
     if not df.empty:
         df["quantity"] = df["quantity"].astype(int)
         df[["sales", "profit", "margin_pct"]] = df[["sales", "profit", "margin_pct"]].astype(float)
@@ -205,56 +157,13 @@ def load_period_categories(start: date, end: date, scope=(None, None, None)) -> 
 @st.cache_data(ttl=60)
 def load_risk_hotspots(start: date, end: date, scope=(None, None, None)) -> pd.DataFrame:
     # Requiring three orders avoids raising a red alert from one loss-making line.
-    return _query("""
-        WITH segments AS (
-            SELECT 'Thị trường' AS kind,
-                   CONCAT(g.market, ' / ', g.country) AS segment,
-                   COUNT(DISTINCT f.order_id) AS orders,
-                   ROUND(SUM(f.sales), 2) AS sales,
-                   ROUND(SUM(f.profit), 2) AS profit
-            FROM gold.fact_sales f
-            JOIN gold.dim_geography g ON f.geography_key = g.geography_key
-            WHERE f.order_date_key BETWEEN :start_key AND :end_key
-              AND (:market IS NULL OR g.market = :market)
-              AND (:region IS NULL OR g.region = :region)
-              AND (:country IS NULL OR g.country = :country)
-            GROUP BY g.market, g.country
-            HAVING COUNT(DISTINCT f.order_id) >= 3 AND SUM(f.profit) < 0
-            UNION ALL
-            SELECT 'Ngành hàng con' AS kind,
-                   CONCAT(p.category, ' / ', p.sub_category) AS segment,
-                   COUNT(DISTINCT f.order_id) AS orders,
-                   ROUND(SUM(f.sales), 2) AS sales,
-                   ROUND(SUM(f.profit), 2) AS profit
-            FROM gold.fact_sales f
-            JOIN gold.dim_product p ON f.product_key = p.product_key
-            JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-            WHERE f.order_date_key BETWEEN :start_key AND :end_key
-              AND (:market IS NULL OR g.market = :market)
-              AND (:region IS NULL OR g.region = :region)
-              AND (:country IS NULL OR g.country = :country)
-            GROUP BY p.category, p.sub_category
-            HAVING COUNT(DISTINCT f.order_id) >= 3 AND SUM(f.profit) < 0
-        )
-        SELECT * FROM segments ORDER BY profit ASC LIMIT 5;
-    """, _scope_params(start, end, scope))
+    return _query(read_sql("gold/dashboard/risk_hotspots.sql"), _scope_params(start, end, scope))
 
 
 @st.cache_data(ttl=60)
 def load_period_products(start: date, end: date, category: str | None,
                          scope=(None, None, None)) -> pd.DataFrame:
-    df = _query("""
-        SELECT p.product_id, p.product_name,
-               SUM(f.quantity) AS quantity,
-               ROUND(SUM(f.sales), 2) AS sales
-        FROM gold.fact_sales f
-        JOIN gold.dim_product p ON f.product_key = p.product_key
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-          AND (:category IS NULL OR p.category = :category)
-    """ + GEO_FILTER + """
-        GROUP BY p.product_id, p.product_name
-    """, {**_scope_params(start, end, scope), "category": category})
+    df = _query(read_sql("gold/dashboard/period_products.sql"), {**_scope_params(start, end, scope), "category": category})
     if not df.empty:
         df["quantity"] = df["quantity"].astype(int)
         df["sales"] = df["sales"].astype(float)
@@ -265,56 +174,18 @@ def load_period_products(start: date, end: date, category: str | None,
 def load_geo_summary(start: date, end: date, scope, level: str) -> pd.DataFrame:
     if level not in ("market", "region", "country"):
         raise ValueError("Cấp địa lý không hợp lệ.")
-    df = _query(f"""
-        SELECT g.{level} AS area,
-               COUNT(DISTINCT f.order_id) AS orders,
-               SUM(f.sales)::float AS sales,
-               SUM(f.profit)::float AS profit,
-               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct
-        FROM gold.fact_sales f
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER + f"""
-        GROUP BY g.{level} ORDER BY sales DESC
-    """, _scope_params(start, end, scope))
+    df = _query(read_sql(f"gold/dashboard/geo_summary_{level}.sql"), _scope_params(start, end, scope))
     return df
 
 
 @st.cache_data(ttl=60)
 def load_customer_segments(start: date, end: date, scope) -> pd.DataFrame:
-    return _query("""
-        SELECT c.segment,
-               COUNT(DISTINCT c.customer_id) AS customers,
-               COUNT(DISTINCT f.order_id) AS orders,
-               SUM(f.sales)::float AS sales,
-               SUM(f.profit)::float AS profit,
-               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct,
-               (SUM(f.sales) / NULLIF(COUNT(DISTINCT f.order_id), 0))::float AS avg_order_value
-        FROM gold.fact_sales f
-        JOIN gold.dim_customer c ON c.customer_key = f.customer_key
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER + """
-        GROUP BY c.segment ORDER BY sales DESC
-    """, _scope_params(start, end, scope))
+    return _query(read_sql("gold/dashboard/customer_segments.sql"), _scope_params(start, end, scope))
 
 
 @st.cache_data(ttl=60)
 def load_subcategories(start: date, end: date, scope) -> pd.DataFrame:
-    return _query("""
-        SELECT p.category, p.sub_category,
-               COUNT(DISTINCT f.order_id) AS orders,
-               SUM(f.quantity) AS quantity,
-               SUM(f.sales)::float AS sales,
-               SUM(f.profit)::float AS profit,
-               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct
-        FROM gold.fact_sales f
-        JOIN gold.dim_product p ON p.product_key = f.product_key
-        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
-        WHERE f.order_date_key BETWEEN :start_key AND :end_key
-    """ + GEO_FILTER + """
-        GROUP BY p.category, p.sub_category ORDER BY sales DESC
-    """, _scope_params(start, end, scope))
+    return _query(read_sql("gold/dashboard/subcategories.sql"), _scope_params(start, end, scope))
 
 
 def rank_products(products: pd.DataFrame, metric: str, top_n: int) -> pd.DataFrame:

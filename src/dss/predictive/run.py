@@ -9,18 +9,11 @@ from sqlalchemy import text
 
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql
+from src.pipeline.reader import read_sql
 
 
 def extract_sales_series(engine):
-    df = query_sql(engine, """
-        SELECT date_trunc('month', d.full_date)::date AS month_date,
-               MAX(d.full_date) AS last_order_date,
-               SUM(f.sales)::float AS total_sales,
-               SUM(f.quantity)::float AS total_quantity
-        FROM gold.fact_sales f
-        JOIN gold.dim_date d ON d.date_key = f.order_date_key
-        GROUP BY 1 ORDER BY 1
-    """)
+    df = query_sql(engine, read_sql("dss/forecast/extract_sales_series.sql"))
     if df.empty:
         raise ValueError("Gold chưa có dữ liệu để dự báo.")
     dates = pd.to_datetime(df.month_date)
@@ -107,21 +100,8 @@ def fit_forecast(df, target_col="total_sales", horizon=6):
 
 def persist_forecast(engine, target_metric, result):
     with engine.begin() as conn:
-        conn.execute(text("""
-            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS horizon_months INTEGER;
-            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS wmape NUMERIC(10, 4);
-            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS model_params JSONB;
-            ALTER TABLE dss.forecast_run ADD COLUMN IF NOT EXISTS history_end DATE;
-        """))
-        run_id = conn.execute(text("""
-            INSERT INTO dss.forecast_run
-                (model_name, target_metric, series_key, train_start, train_end,
-                 test_start, test_end, mae, rmse, mape, horizon_months, wmape, model_params,
-                 history_end)
-            VALUES (:model, :target, 'TOTAL', :train_start, :train_end,
-                    :test_start, :test_end, :mae, :rmse, :mape, :horizon, :wmape,
-                    CAST(:params AS JSONB), :history_end) RETURNING run_id
-        """), {"model": result["model_name"], "target": target_metric,
+        conn.execute(text(read_sql("dss/forecast/upgrade_run.sql")))
+        run_id = conn.execute(text(read_sql("dss/forecast/insert_run.sql")), {"model": result["model_name"], "target": target_metric,
                 "train_start": result["train_start"], "train_end": result["train_end"],
                 "test_start": result["test_start"], "test_end": result["test_end"],
                 "mae": result["mae"], "rmse": result["rmse"], "mape": result["mape"],
@@ -130,11 +110,7 @@ def persist_forecast(engine, target_metric, result):
                 "history_end": result["history_end"]}).scalar_one()
         for dt, pred, low, high in zip(result["future_dates"], result["future_preds"],
                                        result["lower_bounds"], result["upper_bounds"]):
-            conn.execute(text("""
-                INSERT INTO dss.forecast_result
-                    (run_id, forecast_date, series_key, predicted_value, lower_bound, upper_bound)
-                VALUES (:run_id, :dt, 'TOTAL', :pred, :low, :high)
-            """), {"run_id": run_id, "dt": dt.date(), "pred": float(pred),
+            conn.execute(text(read_sql("dss/forecast/insert_result.sql")), {"run_id": run_id, "dt": dt.date(), "pred": float(pred),
                     "low": float(low), "high": float(high)})
     return run_id
 

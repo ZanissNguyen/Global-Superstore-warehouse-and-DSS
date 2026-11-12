@@ -16,18 +16,10 @@ except Exception:
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql, execute_sql
 from src.pipeline.flows.bronze_to_gold import run_pipeline
+from src.pipeline.reader import read_sql
 
 def get_warehouse_metrics(engine):
-    sql = """
-    SELECT 
-        (SELECT COUNT(*) FROM bronze.ingestion) AS ingestion_batches,
-        (SELECT COALESCE(MAX(id), 0) FROM bronze.ingestion) AS latest_ingestion_id,
-        (SELECT COUNT(*) FROM bronze.raw_orders) AS bronze_rows,
-        (SELECT COUNT(*) FROM silver.orders) AS silver_rows,
-        (SELECT COUNT(*) FROM gold.fact_sales) AS gold_rows,
-        (SELECT COALESCE(SUM(sales), 0) FROM gold.fact_sales) AS total_sales,
-        (SELECT COALESCE(SUM(profit), 0) FROM gold.fact_sales) AS total_profit
-    """
+    sql = read_sql("incremental/warehouse_metrics.sql")
     df = query_sql(engine, sql)
     return df.iloc[0].to_dict()
 
@@ -37,26 +29,25 @@ def reset_incremental_test(engine):
     print("=" * 65)
     
     # 1. Delete from gold.fact_sales
-    del_gold = "DELETE FROM gold.fact_sales WHERE CAST(row_id AS INTEGER) >= 60000;"
+    del_gold = read_sql("incremental/delete_gold_test_rows.sql")
     execute_sql(engine, del_gold)
     
     # 2. Delete from silver.orders
-    del_silver = "DELETE FROM silver.orders WHERE row_id >= 60000;"
+    del_silver = read_sql("incremental/delete_silver_test_rows.sql")
     execute_sql(engine, del_silver)
     
     # 3. Find test ingestion IDs and delete from bronze
-    sql_ing = "SELECT id FROM bronze.ingestion WHERE source_name LIKE '%incremental%';"
+    sql_ing = read_sql("incremental/test_ingestion_ids.sql")
     df_ing = query_sql(engine, sql_ing)
     if not df_ing.empty:
-        ing_ids = [str(x) for x in df_ing["id"].tolist()]
-        id_list = ",".join(ing_ids)
-        execute_sql(engine, f"DELETE FROM bronze.raw_orders WHERE ingestion IN ({id_list});")
-        execute_sql(engine, f"DELETE FROM bronze.ingestion WHERE id IN ({id_list});")
+        ing_ids = [int(x) for x in df_ing["id"].tolist()]
+        execute_sql(engine, read_sql("incremental/delete_test_raw_orders.sql"), {"ids": ing_ids})
+        execute_sql(engine, read_sql("incremental/delete_test_ingestions.sql"), {"ids": ing_ids})
     
     # 4. Refresh materialized views
-    execute_sql(engine, "REFRESH MATERIALIZED VIEW gold.mv_sales_mart;")
-    execute_sql(engine, "REFRESH MATERIALIZED VIEW gold.mv_product_mart;")
-    execute_sql(engine, "REFRESH MATERIALIZED VIEW gold.mv_customer_mart;")
+    execute_sql(engine, read_sql("gold/marts/refresh_sales_mart.sql"))
+    execute_sql(engine, read_sql("gold/marts/refresh_product_mart.sql"))
+    execute_sql(engine, read_sql("gold/marts/refresh_customer_mart.sql"))
     
     print("Reset completed successfully. Warehouse returned to baseline state.")
 
@@ -98,24 +89,13 @@ def run_demo(input_file: str = "dataset/incremental_orders_2015_q1.csv"):
 
     # 4. Query verification: Yearly Distribution in Gold
     print("\n[BƯỚC 4: XÁC MINH TRỰC QUAN DOANH SỐ PHÂN BỔ THEO NĂM TRONG GOLD SCHEMA]")
-    sql_years = """
-    SELECT 
-        d.year AS "Năm",
-        COUNT(f.sales) AS "Số dòng đơn hàng",
-        ROUND(SUM(f.sales), 2) AS "Doanh thu ($)",
-        ROUND(SUM(f.profit), 2) AS "Lợi nhuận ($)",
-        ROUND(AVG(f.discount) * 100, 2) AS "Chiết khấu BQ (%)"
-    FROM gold.fact_sales f
-    JOIN gold.dim_date d ON f.order_date_key = d.date_key
-    GROUP BY d.year
-    ORDER BY d.year;
-    """
+    sql_years = read_sql("incremental/year_summary.sql")
     df_years = query_sql(engine, sql_years)
     print(df_years.to_string(index=False))
 
     # 5. Ingestion Audit Table check
     print("\n[BƯỚC 5: LỊCH SỬ CÁC ĐỢT NẠP TRONG BẢNG BRONZE.INGESTION]")
-    df_ing = query_sql(engine, "SELECT id, source_name, loaded_time, metadata FROM bronze.ingestion ORDER BY id DESC LIMIT 3;")
+    df_ing = query_sql(engine, read_sql("incremental/latest_ingestions.sql"))
     print(df_ing.to_string(index=False))
 
     print("\n" + "=" * 65)

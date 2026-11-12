@@ -11,6 +11,8 @@ from typing import Optional, Dict, Any
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql
 from src.dss.what_if.simulate import run_what_if_simulation
+from src.pipeline.reader import read_sql
+from src.app.api.health import live, ready
 
 app = FastAPI(
     title="Global Superstore DW & DSS API",
@@ -31,25 +33,21 @@ class WhatIfRequest(BaseModel):
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
+@app.get("/api/health/live")
+def liveness():
+    return live()
+
+
+@app.get("/api/health/ready")
 @app.get("/api/health")
 def healthcheck():
-    return {"status": "ok", "service": "Global Superstore DSS API"}
+    return ready()
 
 @app.get("/api/kpi/summary")
 def get_kpi_summary():
     """Retrieve top-level Executive KPIs from Gold fact_sales."""
     engine = create_db_engine()
-    sql = """
-    SELECT 
-        COUNT(DISTINCT order_id) AS total_orders,
-        ROUND(SUM(sales), 2) AS total_sales,
-        ROUND(SUM(profit), 2) AS total_profit,
-        ROUND(SUM(quantity), 0) AS total_units,
-        ROUND(AVG(discount) * 100, 2) AS avg_discount_pct,
-        ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2) AS profit_margin_pct,
-        ROUND(COUNT(CASE WHEN is_returned THEN 1 END)::NUMERIC / NULLIF(COUNT(DISTINCT order_id), 0) * 100, 2) AS return_rate_pct
-    FROM gold.fact_sales;
-    """
+    sql = read_sql("api/kpi_summary.sql")
     try:
         df = query_sql(engine, sql)
         if not df.empty:
@@ -72,16 +70,7 @@ def get_kpi_summary():
 def get_monthly_sales_trend():
     """Retrieve monthly sales & profit time series for charting."""
     engine = create_db_engine()
-    sql = """
-    SELECT 
-        d.year_month,
-        ROUND(SUM(f.sales), 2) AS sales,
-        ROUND(SUM(f.profit), 2) AS profit
-    FROM gold.fact_sales f
-    JOIN gold.dim_date d ON f.order_date_key = d.date_key
-    GROUP BY d.year, d.month, d.year_month
-    ORDER BY d.year, d.month;
-    """
+    sql = read_sql("api/monthly_sales_trend.sql")
     try:
         df = query_sql(engine, sql)
         return df.to_dict(orient="records")
@@ -104,17 +93,7 @@ def simulate_what_if(req: WhatIfRequest):
 def get_sales_forecast(horizon: int = Query(6, ge=1, le=12)):
     """Retrieve stored forecast results or compute simple forecast."""
     engine = create_db_engine()
-    sql = """
-    SELECT 
-        forecast_date,
-        series_key,
-        actual_value,
-        predicted_value,
-        lower_bound,
-        upper_bound
-    FROM dss.forecast_result
-    ORDER BY forecast_date;
-    """
+    sql = read_sql("api/forecast_results.sql")
     try:
         df = query_sql(engine, sql)
         if not df.empty:
@@ -140,19 +119,9 @@ def get_sales_forecast(horizon: int = Query(6, ge=1, le=12)):
 def get_association_rules(limit: int = Query(20, ge=1, le=100)):
     """Retrieve top association rules for cross-selling."""
     engine = create_db_engine()
-    sql = f"""
-    SELECT 
-        antecedent_names AS antecedent,
-        consequent_names AS consequent,
-        ROUND(support * 100, 2) AS support_pct,
-        ROUND(confidence * 100, 2) AS confidence_pct,
-        ROUND(lift, 2) AS lift
-    FROM dss.association_rule
-    ORDER BY lift DESC
-    LIMIT {limit};
-    """
+    sql = read_sql("api/association_rules.sql")
     try:
-        df = query_sql(engine, sql)
+        df = query_sql(engine, sql, {"limit": limit})
         if not df.empty:
             return {"rules": df.to_dict(orient="records")}
     except Exception:
