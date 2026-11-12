@@ -9,7 +9,7 @@ from src.dss.what_if.simulate import run_what_if_simulation
 
 
 def render_whatif_tab():
-    st.subheader("Quyết định giá & chiết khấu")
+    st.subheader("Quyết định giá và chiết khấu")
     st.caption("Đây là kịch bản giả định theo độ co giãn do người dùng chọn; không thay đổi dữ liệu thực trong Gold.")
     first, last = load_order_date_bounds()
     period = st.selectbox("Khoảng thời gian", PERIODS, key="whatif_period")
@@ -23,7 +23,7 @@ def render_whatif_tab():
     else:
         start = end = None
     start, end = resolve_period(period, first, last, start, end)
-    st.caption(f"Dữ liệu nền: {start:%d/%m/%Y} – {end:%d/%m/%Y}.")
+    st.caption(f"Dữ liệu nền từ {start:%d/%m/%Y} đến {end:%d/%m/%Y}.")
     options = _query("""
         SELECT DISTINCT g.market FROM gold.dim_geography g ORDER BY g.market
     """)["market"].dropna().tolist()
@@ -54,7 +54,7 @@ def render_whatif_tab():
     c1.metric("Doanh thu thực", f"${sales:,.2f}")
     c2.metric("Lợi nhuận thực", f"${profit:,.2f}")
     c3.metric("Chiết khấu bình quân", f"{discount * 100:.1f}%")
-    adj = st.slider("Thay đổi chiết khấu (điểm %)", -15.0, 30.0, 5.0, 0.5,
+    adj = st.slider("Thay đổi chiết khấu theo điểm phần trăm", -15.0, 30.0, 5.0, 0.5,
                     key="whatif_adjustment") / 100
     elasticity = st.slider("Độ co giãn giả định", 0.5, 3.0, 1.4, 0.1,
                            key="whatif_elasticity")
@@ -70,7 +70,8 @@ def render_whatif_tab():
         "Lợi nhuận": [profit, sim["profit"]],
     })
     st.plotly_chart(px.bar(chart, x="Kịch bản", y=["Doanh thu", "Lợi nhuận"],
-                           barmode="group"), width="stretch")
+                           barmode="group",
+                           color_discrete_sequence=["#3973C7", "#3A8F9E"]), width="stretch")
     status = result["recommendation"]["status"]
     message = result["recommendation"]["message"]
     if "REJECT" in status:

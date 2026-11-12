@@ -42,6 +42,29 @@ def _date_params(start: date, end: date) -> dict:
     return {"start_key": _date_key(start), "end_key": _date_key(end)}
 
 
+def _scope_params(start: date, end: date, scope: tuple[str | None, str | None, str | None]) -> dict:
+    return {**_date_params(start, end),
+            "market": scope[0], "region": scope[1], "country": scope[2]}
+
+
+GEO_FILTER = """
+    AND (:market IS NULL OR g.market = :market)
+    AND (:region IS NULL OR g.region = :region)
+    AND (:country IS NULL OR g.country = :country)
+"""
+
+
+@st.cache_data(ttl=60)
+def load_geo_options(start: date, end: date) -> pd.DataFrame:
+    return _query("""
+        SELECT DISTINCT g.market, g.region, g.country
+        FROM gold.fact_sales f
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
+        WHERE f.order_date_key BETWEEN :start_key AND :end_key
+        ORDER BY g.market, g.region, g.country
+    """, _date_params(start, end))
+
+
 @st.cache_data(ttl=60)
 def load_order_date_bounds() -> tuple[date, date]:
     df = _query("""
@@ -113,16 +136,17 @@ def prior_year_period(start: date, end: date, first: date) -> tuple[date, date] 
 
 
 @st.cache_data(ttl=60)
-def load_period_kpis(start: date, end: date) -> dict:
+def load_period_kpis(start: date, end: date, scope=(None, None, None)) -> dict:
     df = _query("""
         SELECT COUNT(*) AS line_count,
                COUNT(DISTINCT order_id) AS order_count,
                COALESCE(SUM(sales), 0) AS sales,
                COALESCE(SUM(profit), 0) AS profit,
                COALESCE(AVG(discount), 0) AS avg_discount
-        FROM gold.fact_sales
-        WHERE order_date_key BETWEEN :start_key AND :end_key;
-    """, _date_params(start, end))
+        FROM gold.fact_sales f
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
+        WHERE f.order_date_key BETWEEN :start_key AND :end_key
+    """ + GEO_FILTER, _scope_params(start, end, scope))
     row = df.iloc[0]
     sales, profit = float(row["sales"]), float(row["profit"])
     return {
@@ -136,7 +160,7 @@ def load_period_kpis(start: date, end: date) -> dict:
 
 
 @st.cache_data(ttl=60)
-def load_period_trend(start: date, end: date, grain: str) -> pd.DataFrame:
+def load_period_trend(start: date, end: date, grain: str, scope=(None, None, None)) -> pd.DataFrame:
     if grain not in GRAINS:
         raise ValueError("Đơn vị thời gian không hợp lệ.")
     df = _query("""
@@ -146,9 +170,11 @@ def load_period_trend(start: date, end: date, grain: str) -> pd.DataFrame:
                ROUND(SUM(f.profit), 2) AS profit
         FROM gold.fact_sales f
         JOIN gold.dim_date d ON f.order_date_key = d.date_key
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
         WHERE f.order_date_key BETWEEN :start_key AND :end_key
-        GROUP BY 1 ORDER BY 1;
-    """, {**_date_params(start, end), "grain": GRAINS[grain]})
+    """ + GEO_FILTER + """
+        GROUP BY 1 ORDER BY 1
+    """, {**_scope_params(start, end, scope), "grain": GRAINS[grain]})
     if not df.empty:
         df[["sales", "profit"]] = df[["sales", "profit"]].astype(float)
         df["period"] = pd.to_datetime(df["period"])
@@ -156,7 +182,7 @@ def load_period_trend(start: date, end: date, grain: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
-def load_period_categories(start: date, end: date) -> pd.DataFrame:
+def load_period_categories(start: date, end: date, scope=(None, None, None)) -> pd.DataFrame:
     df = _query("""
         SELECT p.category AS category,
                SUM(f.quantity) AS quantity,
@@ -165,9 +191,11 @@ def load_period_categories(start: date, end: date) -> pd.DataFrame:
                ROUND(SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100, 2) AS margin_pct
         FROM gold.fact_sales f
         JOIN gold.dim_product p ON f.product_key = p.product_key
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
         WHERE f.order_date_key BETWEEN :start_key AND :end_key
-        GROUP BY p.category ORDER BY sales DESC;
-    """, _date_params(start, end))
+    """ + GEO_FILTER + """
+        GROUP BY p.category ORDER BY sales DESC
+    """, _scope_params(start, end, scope))
     if not df.empty:
         df["quantity"] = df["quantity"].astype(int)
         df[["sales", "profit", "margin_pct"]] = df[["sales", "profit", "margin_pct"]].astype(float)
@@ -175,7 +203,7 @@ def load_period_categories(start: date, end: date) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
-def load_risk_hotspots(start: date, end: date) -> pd.DataFrame:
+def load_risk_hotspots(start: date, end: date, scope=(None, None, None)) -> pd.DataFrame:
     # Requiring three orders avoids raising a red alert from one loss-making line.
     return _query("""
         WITH segments AS (
@@ -187,6 +215,9 @@ def load_risk_hotspots(start: date, end: date) -> pd.DataFrame:
             FROM gold.fact_sales f
             JOIN gold.dim_geography g ON f.geography_key = g.geography_key
             WHERE f.order_date_key BETWEEN :start_key AND :end_key
+              AND (:market IS NULL OR g.market = :market)
+              AND (:region IS NULL OR g.region = :region)
+              AND (:country IS NULL OR g.country = :country)
             GROUP BY g.market, g.country
             HAVING COUNT(DISTINCT f.order_id) >= 3 AND SUM(f.profit) < 0
             UNION ALL
@@ -197,34 +228,97 @@ def load_risk_hotspots(start: date, end: date) -> pd.DataFrame:
                    ROUND(SUM(f.profit), 2) AS profit
             FROM gold.fact_sales f
             JOIN gold.dim_product p ON f.product_key = p.product_key
+            JOIN gold.dim_geography g ON g.geography_key = f.geography_key
             WHERE f.order_date_key BETWEEN :start_key AND :end_key
+              AND (:market IS NULL OR g.market = :market)
+              AND (:region IS NULL OR g.region = :region)
+              AND (:country IS NULL OR g.country = :country)
             GROUP BY p.category, p.sub_category
             HAVING COUNT(DISTINCT f.order_id) >= 3 AND SUM(f.profit) < 0
         )
         SELECT * FROM segments ORDER BY profit ASC LIMIT 5;
-    """, _date_params(start, end))
+    """, _scope_params(start, end, scope))
 
 
 @st.cache_data(ttl=60)
-def load_period_products(start: date, end: date, category: str | None) -> pd.DataFrame:
+def load_period_products(start: date, end: date, category: str | None,
+                         scope=(None, None, None)) -> pd.DataFrame:
     df = _query("""
         SELECT p.product_id, p.product_name,
                SUM(f.quantity) AS quantity,
                ROUND(SUM(f.sales), 2) AS sales
         FROM gold.fact_sales f
         JOIN gold.dim_product p ON f.product_key = p.product_key
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
         WHERE f.order_date_key BETWEEN :start_key AND :end_key
           AND (:category IS NULL OR p.category = :category)
-        GROUP BY p.product_id, p.product_name;
-    """, {**_date_params(start, end), "category": category})
+    """ + GEO_FILTER + """
+        GROUP BY p.product_id, p.product_name
+    """, {**_scope_params(start, end, scope), "category": category})
     if not df.empty:
         df["quantity"] = df["quantity"].astype(int)
         df["sales"] = df["sales"].astype(float)
     return df
 
 
+@st.cache_data(ttl=60)
+def load_geo_summary(start: date, end: date, scope, level: str) -> pd.DataFrame:
+    if level not in ("market", "region", "country"):
+        raise ValueError("Cấp địa lý không hợp lệ.")
+    df = _query(f"""
+        SELECT g.{level} AS area,
+               COUNT(DISTINCT f.order_id) AS orders,
+               SUM(f.sales)::float AS sales,
+               SUM(f.profit)::float AS profit,
+               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct
+        FROM gold.fact_sales f
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
+        WHERE f.order_date_key BETWEEN :start_key AND :end_key
+    """ + GEO_FILTER + f"""
+        GROUP BY g.{level} ORDER BY sales DESC
+    """, _scope_params(start, end, scope))
+    return df
+
+
+@st.cache_data(ttl=60)
+def load_customer_segments(start: date, end: date, scope) -> pd.DataFrame:
+    return _query("""
+        SELECT c.segment,
+               COUNT(DISTINCT c.customer_id) AS customers,
+               COUNT(DISTINCT f.order_id) AS orders,
+               SUM(f.sales)::float AS sales,
+               SUM(f.profit)::float AS profit,
+               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct,
+               (SUM(f.sales) / NULLIF(COUNT(DISTINCT f.order_id), 0))::float AS avg_order_value
+        FROM gold.fact_sales f
+        JOIN gold.dim_customer c ON c.customer_key = f.customer_key
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
+        WHERE f.order_date_key BETWEEN :start_key AND :end_key
+    """ + GEO_FILTER + """
+        GROUP BY c.segment ORDER BY sales DESC
+    """, _scope_params(start, end, scope))
+
+
+@st.cache_data(ttl=60)
+def load_subcategories(start: date, end: date, scope) -> pd.DataFrame:
+    return _query("""
+        SELECT p.category, p.sub_category,
+               COUNT(DISTINCT f.order_id) AS orders,
+               SUM(f.quantity) AS quantity,
+               SUM(f.sales)::float AS sales,
+               SUM(f.profit)::float AS profit,
+               (SUM(f.profit) / NULLIF(SUM(f.sales), 0) * 100)::float AS margin_pct
+        FROM gold.fact_sales f
+        JOIN gold.dim_product p ON p.product_key = f.product_key
+        JOIN gold.dim_geography g ON g.geography_key = f.geography_key
+        WHERE f.order_date_key BETWEEN :start_key AND :end_key
+    """ + GEO_FILTER + """
+        GROUP BY p.category, p.sub_category ORDER BY sales DESC
+    """, _scope_params(start, end, scope))
+
+
 def rank_products(products: pd.DataFrame, metric: str, top_n: int) -> pd.DataFrame:
-    if metric not in ("quantity", "sales") or top_n not in (5, 7):
+    if metric not in ("quantity", "sales") or top_n not in range(5, 11):
         raise ValueError("Tùy chọn top sản phẩm không hợp lệ.")
     ranked = products.sort_values([metric, "product_name", "product_id"],
                                   ascending=[False, True, True]).head(top_n).copy()
@@ -250,8 +344,47 @@ def _sync_grain() -> None:
     st.session_state["executive_grain"] = DEFAULT_GRAIN[st.session_state["executive_period"]]
 
 
+def _reset_geo_children() -> None:
+    st.session_state["executive_region"] = "Tất cả"
+    st.session_state["executive_country"] = "Tất cả"
+
+
+def _reset_country() -> None:
+    st.session_state["executive_country"] = "Tất cả"
+
+
+def _geo_controls(start: date, end: date):
+    geos = load_geo_options(start, end)
+    if geos.empty:
+        return (None, None, None), "market"
+    market_options = ["Tất cả", *sorted(geos.market.dropna().unique().tolist())]
+    if st.session_state.get("executive_market") not in market_options:
+        st.session_state["executive_market"] = "Tất cả"
+        _reset_geo_children()
+    cols = st.columns(3)
+    market = cols[0].selectbox("Thị trường", market_options, key="executive_market",
+                               on_change=_reset_geo_children)
+    region_options = (["Tất cả", *sorted(geos.loc[geos.market == market, "region"].dropna().unique().tolist())]
+                      if market != "Tất cả" else ["Tất cả"])
+    if st.session_state.get("executive_region") not in region_options:
+        st.session_state["executive_region"] = "Tất cả"
+        _reset_country()
+    region = cols[1].selectbox("Khu vực", region_options, key="executive_region",
+                               disabled=market == "Tất cả", on_change=_reset_country)
+    country_options = (["Tất cả", *sorted(geos.loc[
+        (geos.market == market) & (geos.region == region), "country"].dropna().unique().tolist())]
+        if region != "Tất cả" else ["Tất cả"])
+    if st.session_state.get("executive_country") not in country_options:
+        st.session_state["executive_country"] = "Tất cả"
+    country = cols[2].selectbox("Quốc gia", country_options, key="executive_country",
+                                disabled=region == "Tất cả")
+    scope = tuple(None if value == "Tất cả" else value for value in (market, region, country))
+    level = "market" if market == "Tất cả" else "region" if region == "Tất cả" else "country"
+    return scope, level
+
+
 def render_executive_tab() -> None:
-    st.subheader("Tổng quan doanh thu & rủi ro")
+    st.subheader("Tổng quan doanh thu và rủi ro")
     if st.button("Làm mới dữ liệu", key="executive_refresh"):
         st.cache_data.clear()
         st.rerun()
@@ -296,14 +429,23 @@ def render_executive_tab() -> None:
     with grain_col:
         grain = st.selectbox("Đơn vị trên biểu đồ xu hướng", grain_options, key="executive_grain")
 
-    st.caption(f"Theo ngày đặt hàng: {start:%d/%m/%Y} – {end:%d/%m/%Y}. Mốc gần nhất trong Gold: {last:%d/%m/%Y}.")
+    st.markdown("**Phạm vi địa lý**")
     try:
-        current = load_period_kpis(start, end)
+        scope, geo_level = _geo_controls(start, end)
+    except Exception as exc:
+        st.error(f"Không tải được các lựa chọn địa lý: {exc}")
+        return
+    st.caption(f"Theo ngày đặt hàng từ {start:%d/%m/%Y} đến {end:%d/%m/%Y}. Mốc gần nhất trong Gold: {last:%d/%m/%Y}.")
+    try:
+        current = load_period_kpis(start, end, scope)
         prior_range = prior_year_period(start, end, first) if choice != "Toàn bộ" else None
-        previous = load_period_kpis(*prior_range) if prior_range else None
-        trend = load_period_trend(start, end, grain)
-        categories = load_period_categories(start, end)
-        risks = load_risk_hotspots(start, end)
+        previous = load_period_kpis(*prior_range, scope) if prior_range else None
+        trend = load_period_trend(start, end, grain, scope)
+        categories = load_period_categories(start, end, scope)
+        risks = load_risk_hotspots(start, end, scope)
+        geography = load_geo_summary(start, end, scope, geo_level)
+        segments = load_customer_segments(start, end, scope)
+        subcategories = load_subcategories(start, end, scope)
     except Exception as exc:
         st.error(f"Không truy vấn được dữ liệu Gold cho kỳ đã chọn: {exc}")
         return
@@ -323,11 +465,13 @@ def render_executive_tab() -> None:
                    _point_delta(current["margin_pct"], comparable["margin_pct"] if comparable else None))
     cols[3].metric("Số đơn hàng", f"{current['order_count']:,}",
                    _percent_delta(current["order_count"], comparable["order_count"] if comparable else None))
-    cols[4].metric("Chiết khấu TB/dòng", f"{current['discount_pct']:.2f}%",
+    cols[4].metric("Chiết khấu trung bình mỗi dòng", f"{current['discount_pct']:.2f}%",
                    _point_delta(current["discount_pct"], comparable["discount_pct"] if comparable else None),
                    delta_color="inverse")
     if comparable:
         st.caption("YoY so với cùng khoảng ngày năm trước.")
+    st.caption("Biên lợi nhuận phần trăm được tính bằng lợi nhuận chia doanh thu rồi nhân một trăm "
+               "trong kỳ và phạm vi đang chọn. Tỷ trọng là phần đóng góp vào tổng doanh thu hoặc số lượng.")
     st.caption("Tỷ lệ hoàn trả chưa hiển thị vì dữ liệu nguồn chưa có thông tin trả hàng đáng tin cậy.")
 
     st.subheader("Doanh thu và lợi nhuận theo thời gian")
@@ -340,37 +484,91 @@ def render_executive_tab() -> None:
         tick_step = max(1, (len(trend) + 11) // 12)
         tick_labels = trend["label"].iloc[::tick_step].tolist()
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=trend["label"], y=trend["sales"], name="Doanh thu ($)",
-                             marker_color="#3B82F6"))
-        fig.add_trace(go.Scatter(x=trend["label"], y=trend["profit"], name="Lợi nhuận ($)",
-                                 mode="lines+markers", yaxis="y2", line=dict(color="#10B981", width=2)))
-        fig.update_layout(xaxis_title=f"Thời gian ({grain.lower()})", yaxis_title="Doanh thu ($)",
+        fig.add_trace(go.Bar(x=trend["label"], y=trend["sales"], name="Doanh thu USD",
+                             marker_color="#3973C7"))
+        fig.add_trace(go.Scatter(x=trend["label"], y=trend["profit"], name="Lợi nhuận USD",
+                                 mode="lines+markers", yaxis="y2", line=dict(color="#3A8F9E", width=2)))
+        fig.update_layout(xaxis_title=f"Thời gian theo {grain.lower()}", yaxis_title="Doanh thu USD",
                           xaxis=dict(type="category", tickangle=-45,
                                      tickmode="array", tickvals=tick_labels),
-                          yaxis2=dict(title="Lợi nhuận ($)", overlaying="y", side="right"),
+                          yaxis2=dict(title="Lợi nhuận USD", overlaying="y", side="right"),
                           hovermode="x unified", legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, width="stretch")
+
+    st.subheader("Hiệu quả theo địa lý")
+    if geography.empty:
+        st.info("Không có dữ liệu địa lý trong phạm vi đã chọn.")
+    else:
+        level_name = {"market": "thị trường", "region": "khu vực", "country": "quốc gia"}[geo_level]
+        st.caption(f"Xem theo {level_name}; chọn thị trường rồi khu vực ở bộ lọc phía trên để đi sâu.")
+        geo_display = geography.rename(columns={
+            "area": level_name.capitalize(), "orders": "Số đơn",
+            "sales": "Doanh thu USD", "profit": "Lợi nhuận USD",
+            "margin_pct": "Biên lợi nhuận phần trăm",
+        })
+        st.plotly_chart(px.bar(geo_display, x=level_name.capitalize(),
+                               y=["Doanh thu USD", "Lợi nhuận USD"],
+                               barmode="group",
+                               color_discrete_sequence=["#3973C7", "#3A8F9E"]), width="stretch")
+        st.dataframe(geo_display, hide_index=True, width="stretch")
+
+    st.subheader("Hiệu quả theo phân khúc khách hàng")
+    if segments.empty:
+        st.info("Không có phân khúc khách hàng trong kỳ.")
+    else:
+        segment_display = segments.rename(columns={
+            "segment": "Phân khúc", "customers": "Số khách hàng",
+            "orders": "Số đơn", "sales": "Doanh thu USD",
+            "profit": "Lợi nhuận USD", "margin_pct": "Biên lợi nhuận phần trăm",
+            "avg_order_value": "Giá trị đơn trung bình USD",
+        })
+        st.plotly_chart(px.bar(segment_display, x="Phân khúc",
+                               y=["Doanh thu USD", "Lợi nhuận USD"],
+                               barmode="group",
+                               color_discrete_sequence=["#3973C7", "#3A8F9E"]), width="stretch")
+        st.dataframe(segment_display, hide_index=True, width="stretch")
+        st.caption("Giá trị đơn trung bình được tính bằng doanh thu chia số đơn riêng biệt trong từng phân khúc.")
 
     st.subheader("Doanh thu và lợi nhuận theo ngành hàng")
     if categories.empty:
         st.info("Không có ngành hàng trong kỳ.")
     else:
         display_categories = categories.rename(columns={"category": "Ngành hàng", "quantity": "Số lượng",
-                                                         "sales": "Doanh thu ($)",
-                                                         "profit": "Lợi nhuận ($)", "margin_pct": "Biên lợi nhuận (%)"})
-        fig_cat = px.bar(display_categories, x="Ngành hàng", y=["Doanh thu ($)", "Lợi nhuận ($)"],
+                                                         "sales": "Doanh thu USD",
+                                                         "profit": "Lợi nhuận USD", "margin_pct": "Biên lợi nhuận phần trăm"})
+        fig_cat = px.bar(display_categories, x="Ngành hàng", y=["Doanh thu USD", "Lợi nhuận USD"],
                          barmode="group", labels={"value": "USD", "variable": "Chỉ số"},
-                         color_discrete_sequence=["#3B82F6", "#10B981"])
+                         color_discrete_sequence=["#3973C7", "#3A8F9E"])
         st.plotly_chart(fig_cat, width="stretch")
         st.dataframe(display_categories, hide_index=True, width="stretch")
 
+    st.subheader("Ngành hàng con và nhóm có lợi nhuận âm")
+    if subcategories.empty:
+        st.info("Không có ngành hàng con trong kỳ.")
+    else:
+        sub_display = subcategories.rename(columns={
+            "category": "Ngành hàng", "sub_category": "Ngành hàng con",
+            "orders": "Số đơn", "quantity": "Số lượng",
+            "sales": "Doanh thu USD", "profit": "Lợi nhuận USD",
+            "margin_pct": "Biên lợi nhuận phần trăm",
+        })
+        st.dataframe(sub_display, hide_index=True, width="stretch")
+        loss_groups = sub_display[(sub_display["Lợi nhuận USD"] < 0) &
+                                  (sub_display["Số đơn"] >= 3)]
+        if loss_groups.empty:
+            st.success("Không có ngành hàng con lỗ với ít nhất 3 đơn trong kỳ.")
+        else:
+            st.markdown("**Ngành hàng con có lợi nhuận âm với ít nhất 3 đơn**")
+            st.dataframe(loss_groups.sort_values("Lợi nhuận USD"),
+                         hide_index=True, width="stretch")
+
     st.subheader("Điểm rủi ro có lợi nhuận âm")
-    st.caption("Xét thị trường/quốc gia và ngành hàng con có ít nhất 3 đơn trong kỳ; xếp theo mức lỗ.")
+    st.caption("Xét thị trường, quốc gia và ngành hàng con có ít nhất 3 đơn trong kỳ; xếp theo mức lỗ.")
     if risks.empty:
         st.success("Không có nhóm nào đạt điều kiện cảnh báo trong kỳ đã chọn.")
     else:
         for row in risks.itertuples(index=False):
-            st.warning(f"{row.kind}: {row.segment} — {int(row.orders):,} đơn, "
+            st.warning(f"{row.kind}: {row.segment}, {int(row.orders):,} đơn, "
                        f"doanh thu {_money(float(row.sales))}, lợi nhuận {_money(float(row.profit))}.")
 
     st.subheader("Top sản phẩm bán chạy và tỷ trọng theo ngành hàng")
@@ -384,7 +582,9 @@ def render_executive_tab() -> None:
         top_n = st.selectbox("Số sản phẩm", list(range(5, 11)),
                              index=2, key="executive_top_n")
     try:
-        products = load_period_products(start, end, None if category_choice == "Tất cả" else category_choice)
+        products = load_period_products(start, end,
+                                        None if category_choice == "Tất cả" else category_choice,
+                                        scope)
     except Exception as exc:
         st.error(f"Không truy vấn được sản phẩm: {exc}")
         return
@@ -393,21 +593,25 @@ def render_executive_tab() -> None:
         return
     metric = "quantity" if rank_choice == "Số lượng" else "sales"
     ranked = rank_products(products, metric, top_n)
-    unit = "sản phẩm" if metric == "quantity" else "$"
+    unit = "sản phẩm" if metric == "quantity" else "USD"
     st.caption(f"Biểu đồ thanh: top {top_n} sản phẩm trong ngành hàng đã chọn. "
                f"Biểu đồ quạt: tỷ trọng {rank_choice.lower()} của tất cả ngành hàng trong cùng kỳ.")
     bar_col, pie_col = st.columns(2)
     with bar_col:
         st.markdown("**Sản phẩm bán chạy**")
-        bar_data = ranked.sort_values(metric)
+        bar_data = ranked.sort_values(metric).rename(
+            columns={"share_pct": "Tỷ trọng trong bộ lọc phần trăm"})
         fig_bar = px.bar(bar_data, x=metric, y="short_name", orientation="h",
-                         labels={metric: f"{rank_choice} ({unit})", "short_name": "Sản phẩm"},
-                         hover_data={"product_name": True, "share_pct": ":.2f", "short_name": False})
+                         labels={metric: f"{rank_choice} theo {unit}", "short_name": "Sản phẩm"},
+                         hover_data={"product_name": True, "Tỷ trọng trong bộ lọc phần trăm": ":.2f",
+                                     "short_name": False},
+                         color_discrete_sequence=["#3973C7"])
         fig_bar.update_layout(showlegend=False)
         st.plotly_chart(fig_bar, width="stretch")
     with pie_col:
         st.markdown("**Tỷ trọng theo ngành hàng**")
-        fig_pie = px.pie(categories, names="category", values=metric, hole=0.4)
+        fig_pie = px.pie(categories, names="category", values=metric, hole=0.4,
+                        color_discrete_sequence=["#2456A6", "#4F87C7", "#8CB5E4"])
         fig_pie.update_traces(textinfo="label+percent",
                               hovertemplate=f"%{{label}}<br>{rank_choice}: %{{value:,.2f}} (%{{percent}})<extra></extra>")
         st.plotly_chart(fig_pie, width="stretch")

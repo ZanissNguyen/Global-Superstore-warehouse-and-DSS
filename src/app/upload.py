@@ -11,8 +11,8 @@ from src.app.demo_backend import (
 def _metric_table(before, after):
     labels = {
         "bronze_rows": "Dòng Bronze", "silver_rows": "Dòng Silver",
-        "gold_rows": "Dòng Gold", "total_sales": "Doanh thu ($)",
-        "total_profit": "Lợi nhuận ($)",
+        "gold_rows": "Dòng Gold", "total_sales": "Doanh thu USD",
+        "total_profit": "Lợi nhuận USD",
     }
     rows = []
     for key, label in labels.items():
@@ -22,15 +22,15 @@ def _metric_table(before, after):
 
 
 def render_upload_tab():
-    st.subheader("Nạp dữ liệu & đối soát")
+    st.subheader("Nạp dữ liệu và đối soát")
     st.caption("Chọn một file CSV 500 dòng. Chọn file chỉ xem trước; dữ liệu Gold chỉ đổi sau khi toàn bộ ETL thành công. "
                "Để chuẩn bị lại demo, thay file rồi bấm xử lý lần nữa.")
     session = active_session()
     if session:
-        st.info(f"Phiên đang hoạt động: {session['session_id']} · "
-                f"ingestion #{session['ingestion_id']} · "
-                f"forecast #{session['forecast_3_id']}/#{session['forecast_6_id']} · "
-                f"bán kèm #{session['association_run_id']}.")
+        st.info(f"Phiên đang hoạt động: {session['session_id']}, "
+                f"lần nạp {session['ingestion_id']}, "
+                f"dự báo {session['forecast_3_id']} và {session['forecast_6_id']}, "
+                f"bán kèm {session['association_run_id']}.")
         if st.button("Quay về dữ liệu nền", key="demo_return_to_base"):
             return_to_base(session["session_id"])
             st.session_state.pop("demo_result", None)
@@ -57,14 +57,13 @@ def render_upload_tab():
             b.metric("Số đơn", f"{preview['orders']:,}")
             c.metric("Doanh thu file", f"${preview['sales']:,.2f}")
             d.metric("Lợi nhuận file", f"${preview['profit']:,.2f}")
-            st.caption(f"Ngày đặt hàng: {preview['first_date']:%d/%m/%Y} – "
-                       f"{preview['last_date']:%d/%m/%Y} · SHA-256: {preview['sha256'][:16]}…")
+            st.caption(f"Ngày đặt hàng từ {preview['first_date']:%d/%m/%Y} đến "
+                       f"{preview['last_date']:%d/%m/%Y}. Mã SHA 256: {preview['sha256'][:16]}")
             st.dataframe(df.head(5), hide_index=True, width="stretch")
             if st.button("Xử lý dữ liệu và kích hoạt phiên", type="primary", key="demo_process"):
                 with st.status("Đang xử lý file...", expanded=True) as status:
                     def progress(step, state):
-                        symbol = {"running": "⏳", "success": "✓", "error": "✗"}[state]
-                        st.write(f"{symbol} {step}: {state}")
+                        st.write(f"{step}: {state}")
                     try:
                         result = process_upload(content, uploaded.name, progress)
                     except Exception as exc:
@@ -83,8 +82,8 @@ def render_upload_tab():
         st.markdown("#### Đối soát trước và sau")
         st.dataframe(_metric_table(result["before"], result["after"]),
                      hide_index=True, width="stretch")
-        st.caption(f"Phiên #{result['session_id']}"
-                   + (f" · job #{result['job_id']}" if result.get("job_id") else "")
+        st.caption(f"Phiên {result['session_id']}"
+                   + (f", tác vụ {result['job_id']}" if result.get("job_id") else "")
                    + "; "
                    "các số trên lấy từ hai database trước và sau ETL.")
     recent = history()
