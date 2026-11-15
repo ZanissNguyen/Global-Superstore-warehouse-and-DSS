@@ -3,6 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 import pandas as pd
 from sqlalchemy.dialects.postgresql import insert
+from src.pipeline.reader import read_sql
 
 def execute_sql(
     engine: Engine,
@@ -74,7 +75,7 @@ def truncate_table(
     dry_run: bool = False,
     rollback: bool = False,
 ):
-    sql = f'TRUNCATE TABLE "{schema}"."{table}" CASCADE;'
+    sql = read_sql("system/truncate_table.sql").format(schema=schema, table=table)
 
     return execute_sql(
         engine,

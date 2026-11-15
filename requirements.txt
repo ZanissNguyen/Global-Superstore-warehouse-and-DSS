@@ -25,5 +25,3 @@ plotly
 
 # Web App & DSS Serving
 streamlit
-fastapi
-uvicorn

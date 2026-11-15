@@ -11,17 +11,11 @@ from itertools import combinations
 
 from src.pipeline.database import create_db_engine
 from src.pipeline.executor import query_sql
+from src.pipeline.reader import read_sql
 
 def extract_baskets(engine, level="product"):
-    column_name = "p.product_name" if level == "product" else "p.sub_category"
-    sql = f"""
-    SELECT DISTINCT
-        f.order_id,
-        {column_name} AS item_name
-    FROM gold.fact_sales f
-    JOIN gold.dim_product p ON f.product_key = p.product_key
-    ORDER BY f.order_id;
-    """
+    variant = "product" if level == "product" else "subcategory"
+    sql = read_sql(f"dss/association/baskets_by_{variant}.sql")
     return query_sql(engine, sql)
 
 def mine_association_rules(df, min_support=0.0001, min_confidence=0.10, min_lift=1.2, min_count=2):
@@ -77,24 +71,11 @@ def mine_association_rules(df, min_support=0.0001, min_confidence=0.10, min_lift
 
 def persist_rules(engine, total_tx, rules, min_support, min_confidence, min_lift):
     with engine.begin() as conn:
-        run_id = conn.execute(text("""
-            INSERT INTO dss.association_run (
-                algorithm, min_support, min_confidence, min_lift, transaction_count, rules_found
-            ) VALUES (
-                'Pairwise association mining', :min_supp, :min_conf, :min_lift, :tx_cnt, :rules_cnt
-            ) RETURNING run_id
-        """), {"min_supp": min_support, "min_conf": min_confidence,
+        run_id = conn.execute(text(read_sql("dss/association/insert_run.sql")), {"min_supp": min_support, "min_conf": min_confidence,
                "min_lift": min_lift, "tx_cnt": total_tx,
                "rules_cnt": len(rules)}).scalar_one()
         if rules:
-            conn.execute(text("""
-                INSERT INTO dss.association_rule (
-                    run_id, antecedents, consequents, antecedent_names, consequent_names,
-                    support, confidence, lift
-                ) VALUES (
-                    :run_id, :ant, :con, :ant_name, :con_name, :supp, :conf, :lift
-                )
-            """), [{"run_id": run_id, "ant": r["antecedent"][:20],
+            conn.execute(text(read_sql("dss/association/insert_rule.sql")), [{"run_id": run_id, "ant": r["antecedent"][:20],
                     "con": r["consequent"][:20],
                     "ant_name": r["antecedent"], "con_name": r["consequent"],
                     "supp": r["support"], "conf": r["confidence"],

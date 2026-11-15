@@ -88,7 +88,10 @@ def valid_data(df: DataFrame):
 def extract_market(df):
     if {"Country", "Market"}.issubset(df.columns):
         # get all unique set of Country -> Market
-        unique_market = df[["Country", "Market"]].drop_duplicates()
+        # skip rows where Market is missing (valid_data backfills absent
+        # columns with None, which must not become lookup entries)
+        present = df["Market"].notna() & df["Market"].astype(str).str.strip().ne("")
+        unique_market = df.loc[present, ["Country", "Market"]].drop_duplicates()
         print('Market extracted', unique_market.head(5))
         market_count = unique_market.shape[0]
         return unique_market, market_count

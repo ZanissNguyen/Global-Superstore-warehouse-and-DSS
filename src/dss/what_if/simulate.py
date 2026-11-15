@@ -6,6 +6,7 @@ and net profit based on Price Elasticity of Demand (e).
 
 import sys
 from typing import Dict, Any, Optional, Tuple
+from src.pipeline.reader import read_sql
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -20,17 +21,7 @@ def fetch_baseline_from_db(market: Optional[str] = None, category: Optional[str]
     from src.pipeline.executor import query_sql
     engine = create_db_engine()
     try:
-        sql = """
-        SELECT 
-            COALESCE(SUM(f.sales), 0) AS total_sales,
-            COALESCE(SUM(f.profit), 0) AS total_profit,
-            COALESCE(AVG(f.discount), 0) AS avg_discount
-        FROM gold.fact_sales f
-        JOIN gold.dim_geography g ON f.geography_key = g.geography_key
-        JOIN gold.dim_product p ON f.product_key = p.product_key
-        WHERE (:market IS NULL OR g.market = :market)
-          AND (:category IS NULL OR p.category = :category);
-        """
+        sql = read_sql("gold/whatif/fetch_baseline.sql")
         params = {
             "market": market.strip() if market and market.lower() != "all" else None,
             "category": category.strip() if category and category.lower() != "all" else None,

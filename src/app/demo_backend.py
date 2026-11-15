@@ -1,4 +1,4 @@
-"""Isolated 500-row upload demo. The configured database is never altered by ETL."""
+"""Isolated upload demo (any row count). The configured database is never altered by ETL."""
 
 import hashlib
 import io
@@ -20,6 +20,7 @@ from src.pipeline.flows.refresh_warehouse import refresh_all_marts
 from src.etl.incremental.demo_incremental import get_warehouse_metrics
 from src.dss.predictive.run import run_forecasts
 from src.dss.association.run import extract_baskets, mine_association_rules, persist_rules
+from src.pipeline.reader import read_sql
 
 
 def base_database():
@@ -28,35 +29,9 @@ def base_database():
 
 def _control_tables(engine):
     with engine.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS public.demo_session (
-                session_id TEXT PRIMARY KEY,
-                database_name TEXT NOT NULL,
-                source_hash TEXT NOT NULL,
-                ingestion_id INTEGER,
-                forecast_3_id INTEGER,
-                forecast_6_id INTEGER,
-                association_run_id INTEGER,
-                activated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                active BOOLEAN NOT NULL DEFAULT FALSE
-            )
-        """))
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS public.demo_job (
-                job_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                step TEXT NOT NULL,
-                status TEXT NOT NULL,
-                message TEXT,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        """))
-        conn.execute(text("""
-            ALTER TABLE public.demo_session
-                ADD COLUMN IF NOT EXISTS metrics_before JSONB;
-            ALTER TABLE public.demo_session
-                ADD COLUMN IF NOT EXISTS metrics_after JSONB;
-        """))
+        conn.execute(text(read_sql("demo/create_session.sql")))
+        conn.execute(text(read_sql("demo/create_job.sql")))
+        conn.execute(text(read_sql("demo/upgrade_session.sql")))
 
 
 def active_session():
@@ -64,12 +39,7 @@ def active_session():
     try:
         _control_tables(engine)
         with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT session_id, database_name, ingestion_id, forecast_3_id,
-                       forecast_6_id, association_run_id, activated_at,
-                       metrics_before, metrics_after
-                FROM public.demo_session WHERE active ORDER BY activated_at DESC LIMIT 1
-            """)).mappings().first()
+            row = conn.execute(text(read_sql("demo/active_session.sql"))).mappings().first()
         return dict(row) if row else None
     finally:
         engine.dispose()
@@ -86,12 +56,7 @@ def return_to_base(session_id: str) -> None:
     try:
         _control_tables(engine)
         with engine.begin() as conn:
-            changed = conn.execute(text("""
-                UPDATE public.demo_session
-                SET active = FALSE
-                WHERE session_id = :session_id AND active = TRUE
-                RETURNING session_id
-            """), {"session_id": session_id}).scalar_one_or_none()
+            changed = conn.execute(text(read_sql("demo/deactivate_session.sql")), {"session_id": session_id}).scalar_one_or_none()
             if changed is None:
                 raise ValueError("Phiên hoạt động đã thay đổi; hãy tải lại trang.")
     finally:
@@ -102,11 +67,7 @@ def history():
     engine = create_db_engine(database=base_database())
     try:
         _control_tables(engine)
-        return pd.read_sql(text("""
-            SELECT s.session_id, s.activated_at, s.ingestion_id, s.active,
-                   s.forecast_3_id, s.forecast_6_id, s.association_run_id
-            FROM public.demo_session s ORDER BY s.activated_at DESC LIMIT 10
-        """), engine)
+        return pd.read_sql(text(read_sql("demo/session_history.sql")), engine)
     finally:
         engine.dispose()
 
@@ -121,13 +82,58 @@ def _read_csv(content):
     raise ValueError(f"Không đọc được CSV: {last_error}")
 
 
-def validate_upload(content):
-    df = _read_csv(content)
+def _read_upload(content, filename):
+    """Read CSV as raw strings (unchanged) or Excel with normalized values.
+
+    Excel files may store dates as numeric serials; convert them to ISO
+    strings so the Silver date CASE can parse them. Numeric identifiers
+    (Row ID, Quantity, Postal Code) become integer strings without '.0'.
+    """
+    if not filename.lower().endswith((".xlsx", ".xls")):
+        return _read_csv(content)
+
+    df = pd.read_excel(io.BytesIO(content))
+    for column in ("Order Date", "Ship Date"):
+        if column not in df.columns:
+            continue
+        series = df[column]
+        if pd.api.types.is_numeric_dtype(series):
+            # Excel serial number (1900 date system, origin 1899-12-30)
+            dates = pd.to_datetime(series, unit="D", origin="1899-12-30", errors="coerce")
+        else:
+            dates = pd.to_datetime(series, errors="coerce")
+        df[column] = dates.dt.strftime("%Y-%m-%d").fillna("")
+    for column in ("Row ID", "Quantity", "Postal Code"):
+        if column in df.columns and pd.api.types.is_numeric_dtype(df[column]):
+            df[column] = (
+                pd.to_numeric(df[column], errors="coerce")
+                .round().astype("Int64").astype(str).replace("<NA>", "")
+            )
+    return df.astype(object).where(df.notna(), "").astype(str)
+
+
+def _parse_dates(series):
+    """Parse mixed date strings safely.
+
+    ISO strings (YYYY-MM-DD[...]) are unambiguous and must NOT be parsed
+    with dayfirst=True (pandas would swap day/month or return NaT).
+    Everything else keeps the original D/M/Y dayfirst behaviour.
+    """
+    text = series.astype(str).str.strip()
+    parsed = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
+    iso = text.str.match(r"^\d{4}-\d{2}-\d{2}")
+    if iso.any():
+        parsed[iso] = pd.to_datetime(text[iso], errors="coerce")
+    if (~iso).any():
+        parsed[~iso] = pd.to_datetime(text[~iso], dayfirst=True, errors="coerce")
+    return parsed
+
+
+def validate_upload(content, filename=""):
+    df = _read_upload(content, filename)
     missing = sorted(set(REQUIRED_COLUMNS) - set(df.columns))
     if missing:
         raise ValueError(f"Thiếu cột: {', '.join(missing)}")
-    if len(df) != 500:
-        raise ValueError(f"File demo phải có 500 dòng; hiện có {len(df)}.")
     row_ids = pd.to_numeric(df["Row ID"].str.strip(), errors="coerce")
     if row_ids.isna().any() or row_ids.duplicated().any():
         raise ValueError("Row ID phải là số nguyên duy nhất trong file.")
@@ -139,20 +145,18 @@ def validate_upload(content):
         if pd.to_numeric(df[column], errors="coerce").isna().any():
             raise ValueError(f"Cột {column} chứa giá trị không phải số.")
     for column in ("Order Date", "Ship Date"):
-        parsed = pd.to_datetime(df[column], dayfirst=True, errors="coerce")
+        parsed = _parse_dates(df[column])
         if parsed.isna().any():
             raise ValueError(f"Cột {column} có ngày không hợp lệ.")
     engine = create_db_engine(database=base_database())
     try:
         with engine.connect() as conn:
-            collisions = conn.execute(text("""
-                SELECT COUNT(*) FROM silver.orders WHERE row_id = ANY(:ids)
-            """), {"ids": row_ids.astype(int).tolist()}).scalar_one()
+            collisions = conn.execute(text(read_sql("demo/row_id_collisions.sql")), {"ids": row_ids.astype(int).tolist()}).scalar_one()
         if collisions:
             raise ValueError(f"{collisions} Row ID đã tồn tại trong dữ liệu nền.")
     finally:
         engine.dispose()
-    dates = pd.to_datetime(df["Order Date"], dayfirst=True)
+    dates = _parse_dates(df["Order Date"])
     return df, {
         "rows": len(df), "orders": df["Order ID"].nunique(),
         "first_date": dates.min().date(), "last_date": dates.max().date(),
@@ -182,7 +186,7 @@ def _clone_database(candidate):
         _docker("pg_dump", "-h", "localhost", "-U", os.environ["DB_USER"],
                 "-d", base, "-Fc", "-f", dump_path)
         with control.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            conn.execute(text(f'CREATE DATABASE "{candidate}"'))
+            conn.execute(text(read_sql("demo/create_database.sql").format(database_name=candidate)))
         _docker("pg_restore", "-h", "localhost", "-U", os.environ["DB_USER"],
                 "-d", candidate, "--no-owner", "--no-privileges", dump_path)
     finally:
@@ -194,13 +198,7 @@ def _clone_database(candidate):
 
 def _job(engine, job_id, session_id, step, status, message=""):
     with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT INTO public.demo_job(job_id, session_id, step, status, message)
-            VALUES (:job, :session, :step, :status, :message)
-            ON CONFLICT(job_id) DO UPDATE SET step = EXCLUDED.step,
-                status = EXCLUDED.status, message = EXCLUDED.message,
-                updated_at = CURRENT_TIMESTAMP
-        """), {"job": job_id, "session": session_id, "step": step,
+        conn.execute(text(read_sql("demo/upsert_job.sql")), {"job": job_id, "session": session_id, "step": step,
                 "status": status, "message": message[:1000]})
 
 
@@ -215,7 +213,7 @@ def process_upload(content, filename, progress):
     try:
         _job(control, job_id, session_id, current_step, "running")
         progress(current_step, "running")
-        df, preview = validate_upload(content)
+        df, preview = validate_upload(content, filename)
         _job(control, job_id, session_id, current_step, "success")
         progress(current_step, "success")
         base_engine = create_db_engine(database=base_database())
@@ -236,10 +234,16 @@ def process_upload(content, filename, progress):
             from pathlib import Path
             with TemporaryDirectory() as folder:
                 safe_name = Path(filename).name
-                if not safe_name.lower().endswith(".csv"):
-                    raise ValueError("Chỉ hỗ trợ file CSV.")
+                if not safe_name.lower().endswith((".csv", ".xlsx", ".xls")):
+                    raise ValueError("Chỉ hỗ trợ file CSV hoặc Excel (.csv, .xlsx, .xls).")
                 staged = Path(folder) / safe_name
-                staged.write_bytes(content)
+                if safe_name.lower().endswith(".csv"):
+                    staged.write_bytes(content)
+                else:
+                    # Stage a normalized CSV (ISO dates, integer strings) so the
+                    # shared Bronze reader and Silver date CASE can parse it.
+                    staged = Path(folder) / (Path(safe_name).stem + ".csv")
+                    staged.write_text(df.to_csv(index=False), encoding="utf-8")
                 for label, operation in (
                     ("Bronze", lambda: run_bronze(input_path=staged)),
                     ("Silver", run_silver),
@@ -284,15 +288,8 @@ def process_upload(content, filename, progress):
         _job(control, job_id, session_id, current_step, "running")
         progress(current_step, "running")
         with control.begin() as conn:
-            conn.execute(text("UPDATE public.demo_session SET active = FALSE WHERE active"))
-            conn.execute(text("""
-                INSERT INTO public.demo_session
-                    (session_id, database_name, source_hash, ingestion_id,
-                     forecast_3_id, forecast_6_id, association_run_id,
-                     metrics_before, metrics_after, active)
-                VALUES (:session, :database, :hash, :ingestion, :f3, :f6, :rule,
-                        CAST(:before AS JSONB), CAST(:after AS JSONB), TRUE)
-            """), {"session": session_id, "database": candidate,
+            conn.execute(text(read_sql("demo/deactivate_all_sessions.sql")))
+            conn.execute(text(read_sql("demo/activate_session.sql")), {"session": session_id, "database": candidate,
                     "hash": preview["sha256"], "ingestion": after["latest_ingestion_id"],
                     "f3": forecasts[3], "f6": forecasts[6], "rule": rule_id,
                     "before": json.dumps(before, default=str),

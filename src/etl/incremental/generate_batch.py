@@ -8,12 +8,15 @@ import random
 import pandas as pd
 
 def generate_incremental_batch(
-    base_dataset_path: str = "dataset/superstore_dataset2011-2015.csv",
+    base_dataset_path: str = "data/raw/Global_Superstore.xls",
     output_path: str = "dataset/incremental_orders_2015_q1.csv",
     num_records: int = 500
 ):
     print(f"Reading sample metadata from {base_dataset_path}...")
-    base_df = pd.read_csv(base_dataset_path, encoding="latin1")
+    if base_dataset_path.lower().endswith((".xls", ".xlsx")):
+        base_df = pd.read_excel(base_dataset_path)
+    else:
+        base_df = pd.read_csv(base_dataset_path, encoding="latin1")
 
     # Sample reference entities
     customers = base_df[["Customer ID", "Customer Name", "Segment"]].drop_duplicates().to_dict("records")
