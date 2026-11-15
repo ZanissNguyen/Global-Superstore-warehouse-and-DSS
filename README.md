@@ -1,6 +1,6 @@
 # Global Superstore Warehouse & DSS
 
-Pipeline `CSV → Bronze → Silver → Gold → DSS` trên PostgreSQL, kèm giao diện Streamlit. Chạy các lệnh dưới đây từ **thư mục gốc repo**.
+Pipeline `CSV/Excel → Bronze → Silver → Gold → DSS` trên PostgreSQL, kèm giao diện Streamlit. Chạy các lệnh dưới đây từ **thư mục gốc repo**.
 
 ## Yêu cầu
 

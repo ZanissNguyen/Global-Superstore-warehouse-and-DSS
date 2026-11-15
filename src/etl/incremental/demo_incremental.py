@@ -1,7 +1,8 @@
 """
 Incremental Loading Demo Runner & Validator
-Demonstrates end-to-end Change Data Capture (CDC) and incremental ingestion
-of new business transactions without re-processing legacy data.
+Demonstrates end-to-end append-only incremental ingestion of new business
+transactions without re-processing legacy data (no CDC: appended rows are
+never updated or deleted in place).
 """
 
 import sys
@@ -42,6 +43,9 @@ def reset_incremental_test(engine):
     if not df_ing.empty:
         ing_ids = [int(x) for x in df_ing["id"].tolist()]
         execute_sql(engine, read_sql("incremental/delete_test_raw_orders.sql"), {"ids": ing_ids})
+        # lookup rows (postal/market) appended by the batch carry the same id
+        execute_sql(engine, read_sql("incremental/delete_test_postal.sql"), {"ids": ing_ids})
+        execute_sql(engine, read_sql("incremental/delete_test_market.sql"), {"ids": ing_ids})
         execute_sql(engine, read_sql("incremental/delete_test_ingestions.sql"), {"ids": ing_ids})
     
     # 4. Refresh materialized views
@@ -51,7 +55,7 @@ def reset_incremental_test(engine):
     
     print("Reset completed successfully. Warehouse returned to baseline state.")
 
-def run_demo(input_file: str = "dataset/incremental_orders_2015_q1.csv"):
+def run_demo(input_file: str = "data/raw/Sample-Superstore.xlsx"):
     engine = create_db_engine()
     print("=" * 65)
     print("   DEMO NẠP GIA TĂNG KHO DỮ LIỆU (INCREMENTAL LOADING DEMO)")
@@ -105,7 +109,7 @@ def run_demo(input_file: str = "dataset/incremental_orders_2015_q1.csv"):
 
 def main():
     parser = argparse.ArgumentParser(description="Incremental Loading Demo")
-    parser.add_argument("--input", type=str, default="dataset/incremental_orders_2015_q1.csv")
+    parser.add_argument("--input", type=str, default="data/raw/Sample-Superstore.xlsx")
     parser.add_argument("--reset", action="store_true", help="Revert incremental test back to baseline")
     args = parser.parse_args()
 
