@@ -1,4 +1,4 @@
-"""Isolated 500-row upload demo. The configured database is never altered by ETL."""
+"""Isolated upload demo (any row count). The configured database is never altered by ETL."""
 
 import hashlib
 import io
@@ -82,13 +82,58 @@ def _read_csv(content):
     raise ValueError(f"Không đọc được CSV: {last_error}")
 
 
-def validate_upload(content):
-    df = _read_csv(content)
+def _read_upload(content, filename):
+    """Read CSV as raw strings (unchanged) or Excel with normalized values.
+
+    Excel files may store dates as numeric serials; convert them to ISO
+    strings so the Silver date CASE can parse them. Numeric identifiers
+    (Row ID, Quantity, Postal Code) become integer strings without '.0'.
+    """
+    if not filename.lower().endswith((".xlsx", ".xls")):
+        return _read_csv(content)
+
+    df = pd.read_excel(io.BytesIO(content))
+    for column in ("Order Date", "Ship Date"):
+        if column not in df.columns:
+            continue
+        series = df[column]
+        if pd.api.types.is_numeric_dtype(series):
+            # Excel serial number (1900 date system, origin 1899-12-30)
+            dates = pd.to_datetime(series, unit="D", origin="1899-12-30", errors="coerce")
+        else:
+            dates = pd.to_datetime(series, errors="coerce")
+        df[column] = dates.dt.strftime("%Y-%m-%d").fillna("")
+    for column in ("Row ID", "Quantity", "Postal Code"):
+        if column in df.columns and pd.api.types.is_numeric_dtype(df[column]):
+            df[column] = (
+                pd.to_numeric(df[column], errors="coerce")
+                .round().astype("Int64").astype(str).replace("<NA>", "")
+            )
+    return df.astype(object).where(df.notna(), "").astype(str)
+
+
+def _parse_dates(series):
+    """Parse mixed date strings safely.
+
+    ISO strings (YYYY-MM-DD[...]) are unambiguous and must NOT be parsed
+    with dayfirst=True (pandas would swap day/month or return NaT).
+    Everything else keeps the original D/M/Y dayfirst behaviour.
+    """
+    text = series.astype(str).str.strip()
+    parsed = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
+    iso = text.str.match(r"^\d{4}-\d{2}-\d{2}")
+    if iso.any():
+        parsed[iso] = pd.to_datetime(text[iso], errors="coerce")
+    if (~iso).any():
+        parsed[~iso] = pd.to_datetime(text[~iso], dayfirst=True, errors="coerce")
+    return parsed
+
+
+def validate_upload(content, filename=""):
+    df = _read_upload(content, filename)
     missing = sorted(set(REQUIRED_COLUMNS) - set(df.columns))
     if missing:
         raise ValueError(f"Thiếu cột: {', '.join(missing)}")
-    if len(df) != 500:
-        raise ValueError(f"File demo phải có 500 dòng; hiện có {len(df)}.")
     row_ids = pd.to_numeric(df["Row ID"].str.strip(), errors="coerce")
     if row_ids.isna().any() or row_ids.duplicated().any():
         raise ValueError("Row ID phải là số nguyên duy nhất trong file.")
@@ -100,7 +145,7 @@ def validate_upload(content):
         if pd.to_numeric(df[column], errors="coerce").isna().any():
             raise ValueError(f"Cột {column} chứa giá trị không phải số.")
     for column in ("Order Date", "Ship Date"):
-        parsed = pd.to_datetime(df[column], dayfirst=True, errors="coerce")
+        parsed = _parse_dates(df[column])
         if parsed.isna().any():
             raise ValueError(f"Cột {column} có ngày không hợp lệ.")
     engine = create_db_engine(database=base_database())
@@ -111,7 +156,7 @@ def validate_upload(content):
             raise ValueError(f"{collisions} Row ID đã tồn tại trong dữ liệu nền.")
     finally:
         engine.dispose()
-    dates = pd.to_datetime(df["Order Date"], dayfirst=True)
+    dates = _parse_dates(df["Order Date"])
     return df, {
         "rows": len(df), "orders": df["Order ID"].nunique(),
         "first_date": dates.min().date(), "last_date": dates.max().date(),
@@ -168,7 +213,7 @@ def process_upload(content, filename, progress):
     try:
         _job(control, job_id, session_id, current_step, "running")
         progress(current_step, "running")
-        df, preview = validate_upload(content)
+        df, preview = validate_upload(content, filename)
         _job(control, job_id, session_id, current_step, "success")
         progress(current_step, "success")
         base_engine = create_db_engine(database=base_database())
@@ -189,10 +234,16 @@ def process_upload(content, filename, progress):
             from pathlib import Path
             with TemporaryDirectory() as folder:
                 safe_name = Path(filename).name
-                if not safe_name.lower().endswith(".csv"):
-                    raise ValueError("Chỉ hỗ trợ file CSV.")
+                if not safe_name.lower().endswith((".csv", ".xlsx", ".xls")):
+                    raise ValueError("Chỉ hỗ trợ file CSV hoặc Excel (.csv, .xlsx, .xls).")
                 staged = Path(folder) / safe_name
-                staged.write_bytes(content)
+                if safe_name.lower().endswith(".csv"):
+                    staged.write_bytes(content)
+                else:
+                    # Stage a normalized CSV (ISO dates, integer strings) so the
+                    # shared Bronze reader and Silver date CASE can parse it.
+                    staged = Path(folder) / (Path(safe_name).stem + ".csv")
+                    staged.write_text(df.to_csv(index=False), encoding="utf-8")
                 for label, operation in (
                     ("Bronze", lambda: run_bronze(input_path=staged)),
                     ("Silver", run_silver),

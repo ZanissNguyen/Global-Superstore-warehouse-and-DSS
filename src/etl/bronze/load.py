@@ -19,8 +19,8 @@ def record_ingestion(engine, source_name: str, content_hash: str, loaded_time: s
     )['return'][0]['id']
 
 def record_market(engine, ingestion_id, unique_market, market_count: int, dry_run: bool = False, rollback: bool = False):
-    if market_count == 0:
-        pass
+    if market_count == 0 or unique_market is None:
+        return None
 
     to_write = unique_market.copy()
     to_write["ingestion"] = ingestion_id
@@ -37,9 +37,9 @@ def record_market(engine, ingestion_id, unique_market, market_count: int, dry_ru
     )
 
 def record_pin(engine, ingestion_id, unique_pin, pin_count: int, dry_run: bool = False, rollback: bool = False):
-    if pin_count == 0:
-            pass
-    
+    if pin_count == 0 or unique_pin is None:
+        return None
+
     to_write = unique_pin.copy()
     to_write["ingestion"] = ingestion_id
     return insert_dataframe(

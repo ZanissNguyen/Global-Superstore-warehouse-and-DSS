@@ -23,7 +23,7 @@ def _metric_table(before, after):
 
 def render_upload_tab():
     st.subheader("Nạp dữ liệu và đối soát")
-    st.caption("Chọn một file CSV 500 dòng. Chọn file chỉ xem trước; dữ liệu Gold chỉ đổi sau khi toàn bộ ETL thành công. "
+    st.caption("Chọn một file CSV (mặc định file mẫu 500 dòng). Chọn file chỉ xem trước; dữ liệu Gold chỉ đổi sau khi toàn bộ ETL thành công. "
                "Để chuẩn bị lại demo, thay file rồi bấm xử lý lần nữa.")
     session = active_session()
     if session:
@@ -42,13 +42,13 @@ def render_upload_tab():
     else:
         st.info("Đang hiển thị database nền.")
     uploaded = st.file_uploader(
-        "File CSV mới", type=["csv"],
+        "File CSV/Excel mới", type=["csv", "xlsx", "xls"],
         key=f"demo_csv_{st.session_state.get('demo_upload_version', 0)}",
     )
     if uploaded is not None:
         content = uploaded.getvalue()
         try:
-            df, preview = validate_upload(content)
+            df, preview = validate_upload(content, uploaded.name)
         except Exception as exc:
             st.error(f"File chưa hợp lệ: {exc}")
         else:

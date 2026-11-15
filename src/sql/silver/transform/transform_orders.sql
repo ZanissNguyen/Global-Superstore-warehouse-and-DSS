@@ -38,16 +38,28 @@ SELECT
     TRIM(r."Order ID") AS order_id,
     -- Parse mixed date format (handle both d/m/Y and d-m-Y)
     CASE 
-        WHEN r."Order Date" ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(r."Order Date", 'DD/MM/YYYY')
-        WHEN r."Order Date" ~ '^\d{1,2}-\d{1,2}-\d{4}$' THEN TO_DATE(r."Order Date", 'DD-MM-YYYY')
-        WHEN r."Order Date" ~ '^\d{4}-\d{1,2}-\d{1,2}$' THEN TO_DATE(r."Order Date", 'YYYY-MM-DD')
-        ELSE TO_DATE(r."Order Date", 'DD/MM/YYYY')
+        WHEN TRIM(r."Order Date") ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+            THEN TO_DATE(TRIM(r."Order Date"), 'DD/MM/YYYY')
+
+        WHEN TRIM(r."Order Date") ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+            THEN TO_DATE(TRIM(r."Order Date"), 'DD-MM/YYYY')
+
+        WHEN TRIM(r."Order Date") ~ '^\d{4}-\d{2}-\d{2}'
+            THEN LEFT(TRIM(r."Order Date"), 10)::DATE
+
+        ELSE NULL
     END AS order_date,
     CASE 
-        WHEN r."Ship Date" ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(r."Ship Date", 'DD/MM/YYYY')
-        WHEN r."Ship Date" ~ '^\d{1,2}-\d{1,2}-\d{4}$' THEN TO_DATE(r."Ship Date", 'DD-MM-YYYY')
-        WHEN r."Ship Date" ~ '^\d{4}-\d{1,2}-\d{1,2}$' THEN TO_DATE(r."Ship Date", 'YYYY-MM-DD')
-        ELSE TO_DATE(r."Ship Date", 'DD/MM/YYYY')
+        WHEN TRIM(r."Ship Date") ~ '^\d{1,2}/\d{1,2}/\d{4}$'
+            THEN TO_DATE(TRIM(r."Ship Date"), 'DD/MM/YYYY')
+
+        WHEN TRIM(r."Ship Date") ~ '^\d{1,2}-\d{1,2}-\d{4}$'
+            THEN TO_DATE(TRIM(r."Ship Date"), 'DD-MM/YYYY')
+
+        WHEN TRIM(r."Ship Date") ~ '^\d{4}-\d{2}-\d{2}'
+            THEN LEFT(TRIM(r."Ship Date"), 10)::DATE
+
+        ELSE NULL
     END AS ship_date,
     TRIM(r."Ship Mode") AS ship_mode,
     TRIM(r."Customer ID") AS customer_id,
@@ -56,8 +68,18 @@ SELECT
     TRIM(r."City") AS city,
     TRIM(r."State") AS state,
     TRIM(r."Country") AS country,
-    COALESCE(NULLIF(TRIM(r."Postal Code"), ''), 'Unknown') AS postal_code,
-    TRIM(r."Market") AS market,
+    -- Impute postal code from bronze.postal_code lookup (Country+City+State).
+    -- LIMIT 1 guards against fan-out: lookup key is not unique by itself.
+    COALESCE(
+        NULLIF(TRIM(r."Postal Code"), ''),
+        pin."Postal Code",
+        'Unknown'
+    ) AS postal_code,
+    -- Impute market from bronze.market lookup (Country).
+    COALESCE(
+        NULLIF(TRIM(r."Market"), ''),
+        mk."Market"
+    ) AS market,
     TRIM(r."Region") AS region,
     NULL AS regional_manager, -- populated via enrichment or join
     TRIM(r."Product ID") AS product_id,
@@ -73,6 +95,23 @@ SELECT
     FALSE AS is_returned,
     r.ingestion AS ingestion_id
 FROM bronze.raw_orders r
+LEFT JOIN LATERAL (
+    SELECT p."Postal Code"
+    FROM bronze.postal_code p
+    WHERE p."Country" = TRIM(r."Country")
+      AND p."City"    = TRIM(r."City")
+      AND p."State"   = TRIM(r."State")
+      AND TRIM(p."Postal Code") <> ''
+    ORDER BY p."Postal Code"
+    LIMIT 1
+) pin ON TRUE
+LEFT JOIN LATERAL (
+    SELECT m."Market"
+    FROM bronze.market m
+    WHERE m."Country" = TRIM(r."Country")
+    ORDER BY m."Market"
+    LIMIT 1
+) mk ON TRUE
 WHERE r.transform = FALSE
 ON CONFLICT (row_id) DO NOTHING;
 

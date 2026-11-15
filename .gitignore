@@ -6,4 +6,4 @@ __pycache__/
 images/
 docs/
 temp-docs/
-data/
+dataset/
