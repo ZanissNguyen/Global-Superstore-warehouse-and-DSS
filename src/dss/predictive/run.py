@@ -60,11 +60,11 @@ def _fit_ets(values, horizon):
 
 def fit_forecast(df, target_col="total_sales", horizon=6):
     if horizon not in (3, 6):
-        raise ValueError("Chỉ hỗ trợ chân trời 3 hoặc 6 tháng.")
+        raise ValueError("Chỉ hỗ trợ 3 hoặc 6 tháng kế tiếp.")
     values = df[target_col].astype(float).to_numpy()
     n = len(values)
     if n < 30:
-        raise ValueError("Cần ít nhất 30 tháng lịch sử để backtest.")
+        raise ValueError("Cần ít nhất 30 tháng dữ liệu để backtest.")
     origins = [i for i in (n - 18, n - 12, n - 6) if i >= 24]
     errors = {"Seasonal naive": [], "Holt-Winters additive": []}
     actuals = []
@@ -81,11 +81,23 @@ def fit_forecast(df, target_col="total_sales", horizon=6):
     if model != "Seasonal naive":
         params = dict(zip(("alpha", "beta", "gamma"), params))
     flat = residuals.ravel()
+    # Backtest metrics for BOTH candidates (selection keeps only the winner's residuals).
+    actual_flat = np.asarray(actuals, dtype=float)
+    backtest = {}
+    for name in errors:
+        err = np.concatenate(errors[name])
+        backtest[name] = {
+            "mae": float(np.mean(np.abs(err))),
+            "rmse": float(np.sqrt(np.mean(err ** 2))),
+            "mape": float(np.mean(np.abs(err) / np.maximum(np.abs(actual_flat), 1)) * 100),
+            "wmape": float(np.sum(np.abs(err)) / max(np.sum(np.abs(actual_flat)), 1) * 100),
+        }
     dates = pd.to_datetime(df.month_date)
     future_dates = pd.date_range(dates.iloc[-1] + pd.DateOffset(months=1), periods=horizon, freq="MS")
     widths = np.max(np.abs(residuals), axis=0)
     return {
         "model_name": model, "params": params, "horizon": horizon,
+        "backtest": backtest,
         "train_start": dates.iloc[0].date(), "train_end": dates.iloc[origins[0] - 1].date(),
         "history_end": pd.Timestamp(df.last_order_date.iloc[-1]).date(),
         "test_start": dates.iloc[origins[0]].date(), "test_end": dates.iloc[-1].date(),
@@ -125,12 +137,24 @@ def main():
     parser = argparse.ArgumentParser(description="Forecast monthly Gold sales")
     parser.add_argument("--target", choices=("sales", "quantity"), default="sales")
     parser.add_argument("--horizon", type=int, choices=(3, 6), default=6)
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Print backtest metrics for both models; persist nothing")
     args = parser.parse_args()
     engine = create_db_engine()
     try:
         df = extract_sales_series(engine)
         target = "total_sales" if args.target == "sales" else "total_quantity"
         result = fit_forecast(df, target, args.horizon)
+        if args.dry_run:
+            print(f"Backtest comparison ({args.horizon}-month horizon, "
+                  f"history {result['train_start']} to {result['history_end']}):")
+            print(f"{'Model':<26}{'MAE':>12}{'RMSE':>12}{'MAPE %':>9}{'WMAPE %':>9}")
+            for name, m in sorted(result["backtest"].items(), key=lambda kv: kv[1]["mae"]):
+                mark = "  <- selected" if name == result["model_name"] else ""
+                print(f"{name:<26}{m['mae']:>12,.2f}{m['rmse']:>12,.2f}"
+                      f"{m['mape']:>9.2f}{m['wmape']:>9.2f}{mark}")
+            print(f"Selected: {result['model_name']}, params={result['params']}; dry-run: nothing persisted.")
+            return
         run_id = persist_forecast(engine, args.target, result)
         print(f"Forecast run #{run_id}: {result['model_name']}, MAE={result['mae']:.2f}")
     finally:
